@@ -1,0 +1,24 @@
+@baseUrl = http://localhost:3001
+
+### base
+GET {{baseUrl}}
+
+### base
+GET {{baseUrl}}/api/test
+
+
+### base
+POST {{baseUrl}}/api/logging
+
+
+### ヘルスチェックエンドポイント
+GET {{baseUrl}}/health
+
+### CPU負荷テスト
+GET {{baseUrl}}/cpu-test
+
+### メモリ負荷テスト
+GET {{baseUrl}}/memory-test
+
+### エラーシミュレーション
+GET {{baseUrl}}/error-test
