@@ -7,9 +7,9 @@ export async function GET() {
   // logger.info('API test endpoint accessed');
 
   // CPUテスト
-  while (Date.now() - startTime < 2000) {
-    Math.random() * Math.random();
-  }
+  // while (Date.now() - startTime < 2000) {
+  //   Math.random() * Math.random();
+  // }
 
   // logger.info('CPU test completed', {
   //   duration: Date.now() - startTime

@@ -23,7 +23,7 @@ const ensureLogDirectory = (): void => {
 }
 
 const createLogEntry = (logData: LogData): string => {
-  return `${logData.timestamp} - ${logData.method} ${logData.pathname} - ${JSON.stringify(logData)}\n`
+  return `${JSON.stringify(logData)}\n`
 }
 
 const writeLogToFile = (logEntry: string): void => {
