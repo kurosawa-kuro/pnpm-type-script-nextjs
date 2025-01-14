@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 
 const CONFIG = {
-  LOG_DIR: '/home/ec2-user/app/tmp/pnmp_java_script_express/logs',
+  LOG_DIR: '/home/ec2-user/app/logs',
   LOG_FILE: 'combined.log',
   DATE_FORMAT: 'ISO'
 } as const

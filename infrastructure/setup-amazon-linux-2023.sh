@@ -15,10 +15,10 @@ declare -A INSTALL_FLAGS=(
     [AWS_CLI]=false
     [ANSIBLE]=false
     [DOCKER]=false
-    [NODEJS]=true
-    [CDK]=true
+    [NODEJS]=false
+    [CDK]=false
     [GO]=false
-    [CLOUDWATCH_AGENT]=false
+    [CLOUDWATCH_AGENT]=true
     [SWAP]=false
     [POSTGRESQL]=false
 )
@@ -380,129 +380,44 @@ install_cloudwatch_agent() {
 create_cloudwatch_config() {
     local config_target="$1"
     
-    # 設定ディレクトリの作成
-    mkdir -p "$(dirname "$config_target")"
-    
-    # CloudWatch Agent設定の作成
     cat > "$config_target" << 'EOL'
 {
   "agent": {
-    "metrics_collection_interval": 60,
-    "run_as_user": "root"
-  },
-  "metrics": {
-    "namespace": "CustomMetrics",
-    "metrics_collected": {
-      "disk": {
-        "measurement": [
-          "disk_used_percent",
-          "disk_free",
-          "disk_total"
-        ],
-        "resources": ["/"],
-        "ignore_file_system_types": [
-          "sysfs", "devtmpfs"
-        ]
-      },
-      "mem": {
-        "measurement": [
-          "mem_used_percent",
-          "mem_available",
-          "mem_total"
-        ]
-      },
-      "swap": {
-        "measurement": [
-          "swap_used_percent",
-          "swap_free",
-          "swap_used"
-        ]
-      },
-      "netstat": {
-        "measurement": [
-          "tcp_established",
-          "tcp_time_wait"
-        ]
-      },
-      "port": {
-        "resources": [
-          ":3000"
-        ],
-        "measurement": [
-          "port_listening"
-        ]
-      }
-    },
-    "append_dimensions": {
-      "InstanceId": "${aws:InstanceId}",
-      "InstanceType": "${aws:InstanceType}",
-      "AutoScalingGroupName": "${aws:AutoScalingGroupName}"
-    }
+    "run_as_user": "root",
+    "debug": true
   },
   "logs": {
     "logs_collected": {
       "files": {
         "collect_list": [
           {
-            "file_path": "/var/log/messages",
-            "log_group_name": "/ec2/messages",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 14
-          },
-          {
-            "file_path": "/var/log/secure",
-            "log_group_name": "/ec2/secure",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 14
-          },
-          {
             "file_path": "/home/ec2-user/app/logs/combined.log",
-            "log_group_name": "cdk-typescript-nextjs-01",
+            "log_group_name": "/app/combined-logs",
             "log_stream_name": "{instance_id}",
+            "timestamp_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+            "multi_line_start_pattern": "{",
+            "encoding": "utf-8",
             "retention_in_days": 14
           }
         ]
       }
-    }
+    },
+    "force_flush_interval": 5
   }
 }
 EOL
 
-    chmod 644 "$config_target"
+    # ログディレクトリとファイルの作成・権限設定
+    mkdir -p /home/ec2-user/app/logs
+    touch /home/ec2-user/app/logs/combined.log
+    chown -R ec2-user:ec2-user /home/ec2-user/app/logs
+    chmod 755 /home/ec2-user/app/logs
+    chmod 644 /home/ec2-user/app/logs/combined.log
 
-    # エージェントの設定と起動
-    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-        -a fetch-config \
-        -m ec2 \
-        -s \
-        -c "file:$config_target"
-
-    # サービスの有効化と起動
-    systemctl enable amazon-cloudwatch-agent
-    systemctl restart amazon-cloudwatch-agent
-
-    # 状態確認
-    if ! systemctl is-active amazon-cloudwatch-agent &>/dev/null; then
-        log "Warning: CloudWatch Agent failed to start"
-        return 1
-    fi
-
-    INSTALL_INFO[CLOUDWATCH_AGENT]=$(cat << EOF
-CloudWatch Agent情報:
-- 状態: $(systemctl is-active amazon-cloudwatch-agent)
-- 設定ファイル: $config_target
-- メトリクス収集間隔: 60秒
-- 収集メトリクス:
-  - ディスク使用率・空き容量・総容量
-  - メモリ使用率・利用可能・総容量
-  - スワップ使用率・空き容量・使用量
-- ログ収集:
-  - /var/log/messages -> /ec2/messages
-  - /var/log/secure -> /ec2/secure
-- 保持期間: 14日
-- IAMロール要件: CloudWatchAgentServerPolicy
-EOF
-)
+    # CloudWatch Agent設定ディレクトリの権限設定
+    mkdir -p /opt/aws/amazon-cloudwatch-agent/logs/state
+    chown -R root:root /opt/aws/amazon-cloudwatch-agent/logs
+    chmod -R 755 /opt/aws/amazon-cloudwatch-agent/logs
 }
 
 #=========================================
