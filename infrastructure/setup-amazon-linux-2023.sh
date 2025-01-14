@@ -233,24 +233,47 @@ EOL
         export PNPM_HOME="/usr/local/share/pnpm"
         export PATH="/usr/local/bin:$PNPM_HOME:$PATH"
         
+        # 既存のシンボリックリンクを削除
+        rm -f /usr/local/bin/cdk
+        
         # CDKのインストール
         pnpm install -g aws-cdk
         
-        # CDKのシンボリックリンク作成
-        local cdk_bin="/usr/local/share/pnpm/global/5/node_modules/.bin/cdk"
-        if [[ -f "$cdk_bin" ]]; then
-            log "Creating symlink for CDK..."
-            ln -sf "$cdk_bin" /usr/local/bin/cdk
-            chmod +x /usr/local/bin/cdk
-        else
-            log "Warning: CDK binary not found at expected location"
-            # 代替パスの検索
-            local alt_cdk_bin=$(find /usr/local/share/pnpm/global -name cdk -type f)
-            if [[ -n "$alt_cdk_bin" ]]; then
-                log "Found CDK at alternate location: $alt_cdk_bin"
-                ln -sf "$alt_cdk_bin" /usr/local/bin/cdk
-                chmod +x /usr/local/bin/cdk
+        # CDKのバイナリを探して、シンボリックリンクを作成
+        local cdk_paths=(
+            "/usr/local/share/pnpm/global/5/.pnpm/aws-cdk@*/node_modules/aws-cdk/bin/cdk"
+            "/usr/local/share/pnpm/global/5/node_modules/.bin/cdk"
+            "$(find /usr/local/share/pnpm/global -name cdk -type f | grep '/bin/cdk$' | head -n1)"
+        )
+        
+        local cdk_bin=""
+        for path in "${cdk_paths[@]}"; do
+            if [[ -f "$(eval echo $path)" ]]; then
+                cdk_bin="$(eval echo $path)"
+                break
             fi
+        done
+        
+        if [[ -n "$cdk_bin" ]]; then
+            log "Found CDK binary at: $cdk_bin"
+            ln -sf "$cdk_bin" /usr/local/bin/cdk
+            chmod +x "$cdk_bin"
+            chmod +x /usr/local/bin/cdk
+            
+            # 確認
+            if [[ -x /usr/local/bin/cdk ]]; then
+                log "CDK symlink created successfully"
+            else
+                log "Warning: Failed to create executable CDK symlink"
+            fi
+        else
+            log "Error: Could not find CDK binary"
+            return 1
+        fi
+        
+        # PATHを通す
+        if ! grep -q "/usr/local/bin" /etc/profile.d/pnpm.sh; then
+            echo 'export PATH="/usr/local/bin:$PATH"' >> /etc/profile.d/pnpm.sh
         fi
     fi
     
