@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# デバッグモードを有効化
+set -x
+
 # touch setup.sh && chmod u+x setup.sh && vi setup.sh
 
 #=========================================
@@ -14,8 +17,9 @@ declare -A INSTALL_FLAGS=(
     [DOCKER]=true
     [NODEJS]=true
     [GO]=true
-    [POSTGRESQL]=true
+    [POSTGRESQL]=false
     [CLOUDWATCH_AGENT]=true
+    [SWAP]=false
 )
 
 # データベース設定
@@ -36,15 +40,29 @@ declare -A INSTALL_INFO
 #=========================================
 # 基本ユーティリティ
 #=========================================
-set -euo pipefail
+# エラーハンドリングの設定を調整
+set -uo pipefail
+# set -e は削除（エラー時に即座に終了するのを防ぐ）
+
 trap 'error_handler $? $LINENO $BASH_LINENO "$BASH_COMMAND" $(printf "::%s" ${FUNCNAME[@]:-})' ERR
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+log() { 
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    # デバッグ情報も出力
+    [[ "${DEBUG:-false}" = true ]] && echo "[DEBUG] Called from: ${FUNCNAME[1]:-main}"
+}
+
 error_handler() {
     log "Error occurred in ${5} at line ${2}"
     log "Last command: ${4}"
     log "Exit code: ${1}"
+    # スタックトレースを出力
+    local frame=0
+    while caller $frame; do
+        ((frame++))
+    done
 }
+
 check_command() { command -v "$1" &>/dev/null; }
 
 #=========================================
@@ -163,28 +181,29 @@ install_nodejs() {
     curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
     dnf install -y nodejs
     
-    # pnpmのインストールと設定
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
-    source /root/.bashrc  # pnpmコマンドを使用可能にする
+    # pnpmのインストールと設定を改善
+    npm install -g pnpm
+    
+    # ec2-userのホームディレクトリにpnpmディレクトリを作成
+    mkdir -p /home/ec2-user/.local/share/pnpm
+    chown -R ec2-user:ec2-user /home/ec2-user/.local/share/pnpm
     
     # AWS CDKのインストール
     pnpm add -g aws-cdk
-
-    # pnpmグローバルbinへのパスを設定
-    local pnpm_global_bin="$HOME/.local/share/pnpm"
-    ln -sf "${pnpm_global_bin}/cdk" /usr/local/bin/cdk
-
+    
     # システム全体のPATH設定
-    if [ ! -f /etc/profile.d/pnpm-global.sh ]; then
-        echo "export PNPM_HOME=\"$HOME/.local/share/pnpm\"" > /etc/profile.d/pnpm-global.sh
-        echo "export PATH=\$PATH:\$PNPM_HOME" >> /etc/profile.d/pnpm-global.sh
-        chmod 644 /etc/profile.d/pnpm-global.sh
-    fi
-
-    # ec2-userの.bashrcに設定を追加
+    cat > /etc/profile.d/pnpm.sh << 'EOL'
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+EOL
+    chmod 644 /etc/profile.d/pnpm.sh
+    
+    # ec2-userの.bashrcに設定を追加（既存の設定がない場合のみ）
     if ! grep -q "PNPM_HOME" /home/ec2-user/.bashrc; then
-        echo "export PNPM_HOME=\"\$HOME/.local/share/pnpm\"" >> /home/ec2-user/.bashrc
-        echo "export PATH=\$PATH:\$PNPM_HOME" >> /home/ec2-user/.bashrc
+        cat >> /home/ec2-user/.bashrc << 'EOL'
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+EOL
     fi
 
     INSTALL_INFO[NODEJS]=$(cat << EOF
@@ -429,58 +448,51 @@ check_installed_versions() {
 #=========================================
 main() {
     log "Beginning setup..."
-    setup_swap
+    
+    # デバッグ用：フラグの状態を確認
+    for key in "${!INSTALL_FLAGS[@]}"; do
+        log "Flag $key: ${INSTALL_FLAGS[$key]}"
+    done
+    
+    # 各インストール処理
+    if [[ "${INSTALL_FLAGS[SWAP]}" == "true" ]]; then
+        log "Setting up SWAP..."
+        setup_swap || log "SWAP setup failed"
+    fi
 
-    # コンポーネントのインストール
-    [[ "${INSTALL_FLAGS[DEV_TOOLS]}" = true ]] && {
-        install_dev_tools
-        INSTALL_INFO[DEV_TOOLS]="開発ツール: インストール済み"
-    }
+    if [[ "${INSTALL_FLAGS[DEV_TOOLS]}" == "true" ]]; then
+        log "Installing development tools..."
+        install_dev_tools || log "Dev tools installation failed"
+    fi
 
-    [[ "${INSTALL_FLAGS[POSTGRESQL]}" = true ]] && {
-        install_postgresql
-        INSTALL_INFO[POSTGRESQL]=$(cat << EOF
-PostgreSQL情報:
-- Database (開発用): ${DB_CONFIG[DB]}
-- Database (テスト用): ${DB_CONFIG[DB]}_test
-- User: ${DB_CONFIG[USER]}
-- Password: ${DB_CONFIG[PASSWORD]}
-- Port: 5432
-- 注意: セキュリティグループで5432ポートを開放してください
-EOF
-)
-    }
+    if [[ "${INSTALL_FLAGS[POSTGRESQL]}" == "true" ]]; then
+        log "Installing PostgreSQL..."
+        install_postgresql || log "PostgreSQL installation failed"
+    fi
 
-    [[ "${INSTALL_FLAGS[DOCKER]}" = true ]] && {
-        install_docker
-        # install_docker関数内で既にINSTALL_INFOを設定しているため、ここでは何もしない
-    }
+    if [[ "${INSTALL_FLAGS[DOCKER]}" == "true" ]]; then
+        log "Installing Docker..."
+        install_docker || log "Docker installation failed"
+    fi
 
-    [[ "${INSTALL_FLAGS[NODEJS]}" = true ]] && {
-        install_nodejs
-        INSTALL_INFO[NODEJS]="NodeJS: インストール済み ($(node -v))"
-    }
+    if [[ "${INSTALL_FLAGS[NODEJS]}" == "true" ]]; then
+        log "Installing Node.js..."
+        install_nodejs || log "Node.js installation failed"
+    fi
 
-    [[ "${INSTALL_FLAGS[GO]}" = true ]] && {
-        install_go
-        INSTALL_INFO[GO]=$(cat << EOF
-Go言語情報:
-- Version: $(go version)
-- GOROOT: /usr/local/go
-- GOPATH: /home/ec2-user/go
-- 注意: 新しいシェルを開くか、source /etc/profile.d/go.shを実行してください
-EOF
-)
-    }
+    if [[ "${INSTALL_FLAGS[GO]}" == "true" ]]; then
+        log "Installing Go..."
+        install_go || log "Go installation failed"
+    fi
 
-    [[ "${INSTALL_FLAGS[CLOUDWATCH_AGENT]}" = true ]] && {
-        install_cloudwatch_agent
-        # install_cloudwatch_agent関数内で既にINSTALL_INFOを設定しているため、ここでは何もしない
-    }
+    if [[ "${INSTALL_FLAGS[CLOUDWATCH_AGENT]}" == "true" ]]; then
+        log "Installing CloudWatch Agent..."
+        install_cloudwatch_agent || log "CloudWatch Agent installation failed"
+    fi
 
     # インストール結果の表示
     log "Installation complete. Checking versions..."
-    check_installed_versions
+    check_installed_versions || true
 
     # 最終サマリー
     log "============================================"
