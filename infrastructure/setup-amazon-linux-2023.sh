@@ -17,7 +17,7 @@ declare -A INSTALL_FLAGS=(
     [DOCKER]=true
     [NODEJS]=true
     [GO]=true
-    [CLOUDWATCH_AGENT]=true
+    [CLOUDWATCH_AGENT]=false
     [SWAP]=false
     [POSTGRESQL]=false
 )
@@ -194,54 +194,76 @@ EOF
 install_nodejs() {
     log "Installing Node.js..."
     
-    # 既存のNode.jsがインストールされているかチェック
-    if check_command node; then
-        log "NodeJS is already installed"
-        
-        # npmを削除（pnpmに完全移行）
-        if check_command npm; then
-            log "Removing npm..."
-            npm uninstall -g npm
-        fi
-        
-        # pnpmのインストール
-        if ! check_command pnpm; then
-            log "Installing pnpm..."
-            curl -fsSL https://get.pnpm.io/install.sh | sh -
-            source /etc/profile.d/pnpm.sh
-        fi
-        
-        return 0
+    # Node.jsのインストール
+    if ! check_command node; then
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        dnf install -y nodejs
     fi
 
-    # Node.jsのインストール（npmなし）
-    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-    dnf install -y nodejs
-    
-    # npmを削除
-    log "Removing npm..."
-    npm uninstall -g npm
-    
     # pnpmのインストール
-    log "Installing pnpm..."
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
-    source /etc/profile.d/pnpm.sh
+    if ! check_command pnpm; then
+        log "Installing pnpm..."
+        
+        # pnpmをnpmでグローバルにインストール
+        npm install -g pnpm
+        
+        # グローバルディレクトリの作成
+        mkdir -p /usr/local/bin
+        
+        # シンボリックリンクの作成
+        ln -sf $(readlink -f $(which pnpm)) /usr/local/bin/pnpm
+        
+        # 環境変数の設定
+        cat > /etc/profile.d/pnpm.sh << 'EOL'
+export PATH="/usr/local/bin:$PATH"
+EOL
+        chmod 644 /etc/profile.d/pnpm.sh
+        
+        # ec2-userの設定
+        if ! grep -q "source /etc/profile.d/pnpm.sh" /home/ec2-user/.bashrc; then
+            echo 'source /etc/profile.d/pnpm.sh' >> /home/ec2-user/.bashrc
+        fi
+        chown ec2-user:ec2-user /home/ec2-user/.bashrc
+    fi
     
     # AWS CDKのインストール
-    log "Installing AWS CDK..."
-    pnpm add -g aws-cdk
+    if ! check_command cdk; then
+        log "Installing AWS CDK..."
+        pnpm add -g aws-cdk
+        
+        # CDKのシンボリックリンク
+        ln -sf $(readlink -f $(which cdk)) /usr/local/bin/cdk
+    fi
+    
+    # 環境変数を確実に設定
+    source /etc/profile.d/pnpm.sh
+    
+    # バージョン確認
+    log "Node.js version: $(node -v)"
+    log "pnpm version: $(/usr/local/bin/pnpm -v)"
+    log "AWS CDK version: $(/usr/local/bin/cdk --version 2>/dev/null || echo 'Not installed')"
     
     # Node.js関連の情報を保存
     INSTALL_INFO[NODEJS]=$(cat << EOF
 Node.js情報:
 - Node.js バージョン: $(node -v)
-- pnpm バージョン: $(pnpm -v)
-- AWS CDK バージョン: $(cdk --version)
-- 環境変数: 
-  - PATH: $(which node)
-  - pnpm: $(which pnpm)
+- pnpm バージョン: $(/usr/local/bin/pnpm -v)
+- AWS CDK バージョン: $(/usr/local/bin/cdk --version 2>/dev/null || echo 'Not installed')
+- インストール場所:
+  - Node.js: $(which node)
+  - pnpm: /usr/local/bin/pnpm
+  - CDK: /usr/local/bin/cdk
 EOF
 )
+}
+
+# プロファイル設定を追加
+setup_nodejs_profile() {
+    cat > /etc/profile.d/nodejs.sh << 'EOL'
+# Node.js環境設定
+export PATH="/usr/local/bin:$PATH"
+EOL
+    chmod 644 /etc/profile.d/nodejs.sh
 }
 
 #=========================================
