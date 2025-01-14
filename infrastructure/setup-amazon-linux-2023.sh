@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # デバッグモードを有効化
-set -x
+# set -x
 
 # touch setup.sh && chmod u+x setup.sh && vi setup.sh
 
@@ -17,9 +17,9 @@ declare -A INSTALL_FLAGS=(
     [DOCKER]=true
     [NODEJS]=true
     [GO]=true
-    [POSTGRESQL]=false
     [CLOUDWATCH_AGENT]=true
     [SWAP]=false
+    [POSTGRESQL]=false
 )
 
 # データベース設定
@@ -53,14 +53,31 @@ log() {
 }
 
 error_handler() {
-    log "Error occurred in ${5} at line ${2}"
-    log "Last command: ${4}"
-    log "Exit code: ${1}"
-    # スタックトレースを出力
-    local frame=0
-    while caller $frame; do
-        ((frame++))
-    done
+    local exit_code=$1
+    local line_number=$2
+    local bash_lineno=$3
+    local last_command=$4
+    local func_stack=$5
+
+    # 正常終了の場合はエラーハンドリングをスキップ
+    if [[ $exit_code -eq 0 ]]; then
+        return 0
+    fi
+
+    # デバッグ情報の出力
+    if [[ "${DEBUG:-false}" = true ]]; then
+        log "Error occurred in ${func_stack} at line ${line_number}"
+        log "Last command: ${last_command}"
+        log "Exit code: ${exit_code}"
+    fi
+
+    # スタックトレースの出力（重大なエラー時のみ）
+    if [[ $exit_code -gt 1 ]]; then
+        local frame=0
+        while caller $frame; do
+            ((frame++))
+        done 2>/dev/null
+    fi
 }
 
 check_command() { command -v "$1" &>/dev/null; }
@@ -175,44 +192,54 @@ EOF
 # NodeJS
 #=========================================
 install_nodejs() {
-    check_command node && { log "NodeJS is already installed"; return 0; }
+    log "Installing Node.js..."
+    
+    # 既存のNode.jsがインストールされているかチェック
+    if check_command node; then
+        log "NodeJS is already installed"
+        
+        # npmを削除（pnpmに完全移行）
+        if check_command npm; then
+            log "Removing npm..."
+            npm uninstall -g npm
+        fi
+        
+        # pnpmのインストール
+        if ! check_command pnpm; then
+            log "Installing pnpm..."
+            curl -fsSL https://get.pnpm.io/install.sh | sh -
+            source /etc/profile.d/pnpm.sh
+        fi
+        
+        return 0
+    fi
 
-    log "Installing NodeJS..."
+    # Node.jsのインストール（npmなし）
     curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
     dnf install -y nodejs
     
-    # pnpmのインストールと設定を改善
-    npm install -g pnpm
+    # npmを削除
+    log "Removing npm..."
+    npm uninstall -g npm
     
-    # ec2-userのホームディレクトリにpnpmディレクトリを作成
-    mkdir -p /home/ec2-user/.local/share/pnpm
-    chown -R ec2-user:ec2-user /home/ec2-user/.local/share/pnpm
+    # pnpmのインストール
+    log "Installing pnpm..."
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    source /etc/profile.d/pnpm.sh
     
     # AWS CDKのインストール
+    log "Installing AWS CDK..."
     pnpm add -g aws-cdk
     
-    # システム全体のPATH設定
-    cat > /etc/profile.d/pnpm.sh << 'EOL'
-export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
-EOL
-    chmod 644 /etc/profile.d/pnpm.sh
-    
-    # ec2-userの.bashrcに設定を追加（既存の設定がない場合のみ）
-    if ! grep -q "PNPM_HOME" /home/ec2-user/.bashrc; then
-        cat >> /home/ec2-user/.bashrc << 'EOL'
-export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
-EOL
-    fi
-
+    # Node.js関連の情報を保存
     INSTALL_INFO[NODEJS]=$(cat << EOF
-NodeJS情報:
-- Node Version: $(node -v)
-- pnpm Version: $(pnpm -v)
-- AWS CDK Version: $(cdk --version)
-- Global bin path: ${pnpm_global_bin}
-- 注意: 新しいシェルを開くか、source ~/.bashrcを実行してください
+Node.js情報:
+- Node.js バージョン: $(node -v)
+- pnpm バージョン: $(pnpm -v)
+- AWS CDK バージョン: $(cdk --version)
+- 環境変数: 
+  - PATH: $(which node)
+  - pnpm: $(which pnpm)
 EOF
 )
 }
@@ -280,6 +307,10 @@ install_cloudwatch_agent() {
     }
 
     create_cloudwatch_config "$config_target"
+    
+    # 設定完了後のメッセージを追加
+    log "CloudWatch Agent setup completed successfully"
+    log "Service status: $(systemctl is-active amazon-cloudwatch-agent)"
 }
 
 create_cloudwatch_config() {
@@ -494,21 +525,38 @@ main() {
     log "Installation complete. Checking versions..."
     check_installed_versions || true
 
-    # 最終サマリー
+    # 最終サマリーの表示
+    display_summary
+
+    log "Setup completed successfully"
+    return 0
+}
+
+#=========================================
+# サマリー表示関数
+#=========================================
+display_summary() {
     log "============================================"
     log "インストール完了サマリー"
     log "============================================"
+    
+    # INSTALL_INFOの内容を表示
     for key in "${!INSTALL_INFO[@]}"; do
-        log "${INSTALL_INFO[$key]}"
-        log "--------------------------------------------"
+        if [[ -n "${INSTALL_INFO[$key]}" ]]; then
+            log "${INSTALL_INFO[$key]}"
+            log "--------------------------------------------"
+        fi
     done
     
+    # 注意事項の表示
     log "注意事項:"
     log "1. 各コンポーネントの詳細な設定は上記のログを確認してください"
     log "2. 必要に応じてセキュリティグループの設定を行ってください"
     log "3. 環境変数を反映するには、新しいシェルを開くか、sourceコマンドを実行してください"
 }
 
+# スクリプトの最後に追加
+trap - ERR EXIT  # すべてのトラップをリセット
+
 # スクリプトの実行
 main
-log "Setup completed successfully" 
