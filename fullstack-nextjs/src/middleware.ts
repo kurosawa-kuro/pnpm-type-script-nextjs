@@ -7,18 +7,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  console.log('★★★ request.nextUrl.origin ★★★', request.nextUrl.origin)
-  
-  console.log('★★★ request.nextUrl.pathname ★★★', request.nextUrl.pathname)
-  // 実際のリクエスト情報を収集
-  const logData = {
-    method: request.method,
-    url: request.url,
-    path: request.nextUrl.pathname,
-    headers: Object.fromEntries(request.headers),
-    timestamp: new Date().toISOString()
-  }
-
   try {
     // ロギングAPIを呼び出し
     await fetch(`${request.nextUrl.origin}/api/logging`, {
