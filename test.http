@@ -3,11 +3,11 @@
 ### base
 GET {{baseUrl}}
 
-### base
+### api/test
 GET {{baseUrl}}/api/test
 
 
-### base
+### api/logging
 POST {{baseUrl}}/api/logging
 
 

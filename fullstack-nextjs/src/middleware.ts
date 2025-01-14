@@ -1,49 +1,47 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// ミドルウェア関数の定義
 export async function middleware(request: NextRequest) {
-    // /api/logging へのリクエストはスキップ
-    if (request.nextUrl.pathname === '/api/logging') {
-        return NextResponse.next()
-    }
-
-    const logData = {
-        method: request.method,
-        path: request.nextUrl.pathname,
-        ip: request.headers.get('x-forwarded-for') || '127.0.0.1',
-        timestamp: new Date().toISOString()
-    }
-
-    try {
-        const protocol = request.headers.get('x-forwarded-proto') || 'http'
-        const host = request.headers.get('host')
-        const url = `${protocol}://${host}/api/logging`
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(logData),
-            cache: 'no-store'
-        })
-
-        if (!response.ok) {
-            console.error('Logging failed:', await response.text())
-        }
-    } catch (error) {
-        console.error('Logging failed:', error)
-    }
-
+  // ロギング対象外のパスはスキップ
+  if (request.nextUrl.pathname === '/api/logging') {
     return NextResponse.next()
+  }
+
+  console.log('★★★ request.nextUrl.origin ★★★', request.nextUrl.origin)
+  
+  console.log('★★★ request.nextUrl.pathname ★★★', request.nextUrl.pathname)
+  // 実際のリクエスト情報を収集
+  const logData = {
+    method: request.method,
+    url: request.url,
+    path: request.nextUrl.pathname,
+    headers: Object.fromEntries(request.headers),
+    timestamp: new Date().toISOString()
+  }
+
+  try {
+    // ロギングAPIを呼び出し
+    await fetch(`${request.nextUrl.origin}/api/logging`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: request.method,
+        origin: request.nextUrl.origin,
+        pathname: request.nextUrl.pathname,
+        headers: Object.fromEntries(request.headers),
+        timestamp: new Date().toISOString()
+      })
+    })
+  } catch (error) {
+    console.error('Logging failed:', error)
+  }
+
+  return NextResponse.next()
 }
 
 // ミドルウェアを適用するパスを設定
 export const config = {
-  matcher: [
-    // APIルートを含むすべてのパスにマッチ
-    '/:path*'
-  ],
+  matcher: '/api/:path*'
 }
