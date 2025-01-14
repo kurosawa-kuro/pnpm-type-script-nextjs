@@ -11,12 +11,13 @@
 # インストール設定
 declare -A INSTALL_FLAGS=(
     [SYSTEM_UPDATES]=false
-    [DEV_TOOLS]=true
+    [DEV_TOOLS]=false
     [AWS_CLI]=false
     [ANSIBLE]=false
-    [DOCKER]=true
+    [DOCKER]=false
     [NODEJS]=true
-    [GO]=true
+    [CDK]=true
+    [GO]=false
     [CLOUDWATCH_AGENT]=false
     [SWAP]=false
     [POSTGRESQL]=false
@@ -203,56 +204,74 @@ install_nodejs() {
     # pnpmのインストール
     if ! check_command pnpm; then
         log "Installing pnpm..."
-        
-        # pnpmをnpmでグローバルにインストール
         npm install -g pnpm
         
-        # グローバルディレクトリの作成
+        # pnpmのグローバルディレクトリ設定
+        mkdir -p /usr/local/share/pnpm
         mkdir -p /usr/local/bin
         
-        # シンボリックリンクの作成
-        ln -sf $(readlink -f $(which pnpm)) /usr/local/bin/pnpm
-        
         # 環境変数の設定
+        export PNPM_HOME="/usr/local/share/pnpm"
+        export PATH="/usr/local/bin:$PNPM_HOME:$PATH"
+        
+        # システム全体の環境変数設定
         cat > /etc/profile.d/pnpm.sh << 'EOL'
-export PATH="/usr/local/bin:$PATH"
+export PNPM_HOME="/usr/local/share/pnpm"
+export PATH="/usr/local/bin:$PNPM_HOME:$PATH"
 EOL
         chmod 644 /etc/profile.d/pnpm.sh
         
-        # ec2-userの設定
-        if ! grep -q "source /etc/profile.d/pnpm.sh" /home/ec2-user/.bashrc; then
-            echo 'source /etc/profile.d/pnpm.sh' >> /home/ec2-user/.bashrc
-        fi
-        chown ec2-user:ec2-user /home/ec2-user/.bashrc
+        # pnpmの初期設定
+        pnpm config set global-dir "/usr/local/share/pnpm"
+        pnpm config set global-bin-dir "/usr/local/bin"
     fi
     
     # AWS CDKのインストール
-    if ! check_command cdk; then
+    if [[ "${INSTALL_FLAGS[CDK]}" == "true" ]] && ! check_command cdk; then
         log "Installing AWS CDK..."
-        pnpm add -g aws-cdk
+        # 環境変数を確実に設定
+        export PNPM_HOME="/usr/local/share/pnpm"
+        export PATH="/usr/local/bin:$PNPM_HOME:$PATH"
         
-        # CDKのシンボリックリンク
-        ln -sf $(readlink -f $(which cdk)) /usr/local/bin/cdk
+        # CDKのインストール
+        pnpm install -g aws-cdk
+        
+        # CDKのシンボリックリンク作成
+        local cdk_bin="/usr/local/share/pnpm/global/5/node_modules/.bin/cdk"
+        if [[ -f "$cdk_bin" ]]; then
+            log "Creating symlink for CDK..."
+            ln -sf "$cdk_bin" /usr/local/bin/cdk
+            chmod +x /usr/local/bin/cdk
+        else
+            log "Warning: CDK binary not found at expected location"
+            # 代替パスの検索
+            local alt_cdk_bin=$(find /usr/local/share/pnpm/global -name cdk -type f)
+            if [[ -n "$alt_cdk_bin" ]]; then
+                log "Found CDK at alternate location: $alt_cdk_bin"
+                ln -sf "$alt_cdk_bin" /usr/local/bin/cdk
+                chmod +x /usr/local/bin/cdk
+            fi
+        fi
     fi
     
-    # 環境変数を確実に設定
+    # 環境変数を反映
     source /etc/profile.d/pnpm.sh
     
     # バージョン確認
     log "Node.js version: $(node -v)"
-    log "pnpm version: $(/usr/local/bin/pnpm -v)"
-    log "AWS CDK version: $(/usr/local/bin/cdk --version 2>/dev/null || echo 'Not installed')"
+    log "pnpm version: $(pnpm -v)"
+    log "AWS CDK version: $(cdk --version 2>/dev/null || echo 'Not installed')"
     
     # Node.js関連の情報を保存
     INSTALL_INFO[NODEJS]=$(cat << EOF
 Node.js情報:
 - Node.js バージョン: $(node -v)
-- pnpm バージョン: $(/usr/local/bin/pnpm -v)
-- AWS CDK バージョン: $(/usr/local/bin/cdk --version 2>/dev/null || echo 'Not installed')
+- pnpm バージョン: $(pnpm -v)
+- AWS CDK バージョン: $(cdk --version 2>/dev/null || echo 'Not installed')
 - インストール場所:
   - Node.js: $(which node)
-  - pnpm: /usr/local/bin/pnpm
-  - CDK: /usr/local/bin/cdk
+  - pnpm: $(which pnpm)
+  - CDK: $(which cdk 2>/dev/null || echo 'Not installed')
 EOF
 )
 }
@@ -474,6 +493,7 @@ check_installed_versions() {
         "docker-compose:${INSTALL_FLAGS[DOCKER]}"
         "node:${INSTALL_FLAGS[NODEJS]}"
         "pnpm:${INSTALL_FLAGS[NODEJS]}"
+        "cdk:${INSTALL_FLAGS[CDK]}"
         "psql:${INSTALL_FLAGS[POSTGRESQL]}"
     )
 
@@ -501,6 +521,11 @@ check_installed_versions() {
 #=========================================
 main() {
     log "Beginning setup..."
+    
+    # CDKが必要な場合は、Node.jsも必要
+    if [[ "${INSTALL_FLAGS[CDK]}" == "true" ]]; then
+        INSTALL_FLAGS[NODEJS]=true
+    fi
     
     # デバッグ用：フラグの状態を確認
     for key in "${!INSTALL_FLAGS[@]}"; do
