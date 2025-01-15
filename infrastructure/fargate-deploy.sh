@@ -6,6 +6,7 @@ ACCOUNT_ID="985539793438"
 REPOSITORY_NAME="nextjs-app"
 IMAGE_TAG="latest"
 DOCKERFILE_PATH="./fullstack-nextjs"
+# 985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app
 
 # Dockerサービスの自動起動設定
 echo "Configuring Docker service..."

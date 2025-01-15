@@ -43,6 +43,14 @@ cd ${NEXTJS_DIR}
 rm -rf node_modules
 pnpm install --no-frozen-lockfile
 
+# 既存のコンテナの確認と削除
+echo "既存のコンテナを確認中..."
+if docker ps -a | grep -q nextjs-local; then
+    echo "既存のnextjs-localコンテナを停止・削除中..."
+    docker stop nextjs-local >/dev/null 2>&1 || true
+    docker rm nextjs-local >/dev/null 2>&1 || true
+fi
+
 # イメージのビルド
 echo "Dockerイメージをビルド中..."
 docker build -t ${REPOSITORY_NAME}:${IMAGE_TAG} \

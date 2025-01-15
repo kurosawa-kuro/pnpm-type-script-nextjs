@@ -1,25 +1,28 @@
+### ==================== 基本エンドポイント ====================
 @baseUrl = http://localhost:3000
+@baseUrlEcs = http://43.206.115.251:3000
 
-### base
+### ベース
 GET {{baseUrl}}
 
-### api/test
+### テストエンドポイント
 GET {{baseUrl}}/api/test
 
-### api/test ecs
-GET http://18.179.34.1:3000
+### ==================== ECS環境テスト ====================
+### ECSベース
+GET {{baseUrlEcs}}
 
-### api/test ecs
-GET http://18.179.34.1:3000/api/test
+### ECSテストエンドポイント
+GET {{baseUrlEcs}}/api/test
 
-
-### api/logging
+### ==================== モニタリング関連 ====================
+### ロギング
 POST {{baseUrl}}/api/logging
 
-
-### ヘルスチェックエンドポイント
+### ヘルスチェック
 GET {{baseUrl}}/health
 
+### ==================== 負荷テスト ====================
 ### CPU負荷テスト
 GET {{baseUrl}}/cpu-test
 
