@@ -12,3 +12,13 @@ docker tag nextjs-app:latest 985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/n
 docker push 985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app:latest
 
 nextjs-app-02-ecs-sg
+
+# CloudWatchのログを直接確認
+aws logs tail /ecs/nextjs-app-02 --follow
+
+# 特定のログストリームを確認
+aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --follow
+
+検証環境整備してPDCAサイクルを高速化
+
+その為にScript Makefileをフル活用

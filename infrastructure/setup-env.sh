@@ -15,10 +15,10 @@ declare -A INSTALL_FLAGS=(
     [AWS_CLI]=false
     [ANSIBLE]=false
     [DOCKER]=false
-    [NODEJS]=false
-    [CDK]=false
+    [NODEJS]=true
+    [CDK]=true
     [GO]=false
-    [CLOUDWATCH_AGENT]=true
+    [CLOUDWATCH_AGENT]=false
     [SWAP]=false
     [POSTGRESQL]=false
 )

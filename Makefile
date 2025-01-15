@@ -8,11 +8,18 @@ watch:
 
 # 環境セットアップ（シンプル化）
 setup-env:
-	chmod u+x ./infrastructure/setup.sh && ./infrastructure/setup.sh
+	chmod u+x ./infrastructure/setup-env.sh
+	sudo ./infrastructure/setup-env.sh
+
+# 環境セットアップ（シンプル化）
+setup-app:
+	chmod u+x ./infrastructure/setup-app.sh
+	sudo ./infrastructure/setup-app.sh
 
 # 依存関係のインストール
 pnpm-install: install-pnpm
 	pnpm install
 
-# すべてのセットアップを実行
-setup-app: setup-env pnpm-install
+# /home/ec2-user/app/infrastructure/fargate-deploy.sh
+fargate-deploy:
+	./infrastructure/fargate-deploy.sh
