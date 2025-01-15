@@ -16,9 +16,10 @@ interface LogData {
   timestamp: string
 }
 
-const ensureLogDirectory = (): void => {
-  if (!fs.existsSync(CONFIG.LOG_DIR)) {
-    fs.mkdirSync(CONFIG.LOG_DIR, { recursive: true })
+function ensureLogDirectory() {
+  const logDir = path.join(process.cwd(), CONFIG.LOG_DIR)
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true })
   }
 }
 
@@ -33,17 +34,30 @@ const writeLogToFile = (logEntry: string): void => {
 
 export async function POST(request: Request) {
   try {
+    // console.log('Request received:', {
+    //   method: request.method,
+    //   url: request.url,
+    //   headers: Object.fromEntries(request.headers),
+    // });
+
+    // 空のリクエストの場合は静かにスキップ
+    const contentLength = request.headers.get('content-length');
+    if (!contentLength || contentLength === '0') {
+      return NextResponse.json({ success: true });
+    }
+
     const logData: LogData = await request.json()
+    // console.log('Request body:', logData);
     
     ensureLogDirectory()
     const logEntry = createLogEntry(logData)
     writeLogToFile(logEntry)
 
-    return NextResponse.json({ message: 'Log written successfully' })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error writing log:', error)
     return NextResponse.json(
-      { message: 'Failed to write log' },
+      { success: false },
       { status: 500 }
     )
   }

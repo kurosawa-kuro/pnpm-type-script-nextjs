@@ -6,6 +6,12 @@ GET {{baseUrl}}
 ### api/test
 GET {{baseUrl}}/api/test
 
+### api/test ecs
+GET http://18.179.34.1:3000
+
+### api/test ecs
+GET http://18.179.34.1:3000/api/test
+
 
 ### api/logging
 POST {{baseUrl}}/api/logging
