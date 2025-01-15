@@ -18,7 +18,16 @@ setup-app:
 
 # /home/ec2-user/app/infrastructure/fargate-deploy.sh
 fargate-deploy:
+	chmod u+x ./infrastructure/fargate-deploy.sh
 	./infrastructure/fargate-deploy.sh
+
+fargate-local:
+	chmod u+x ./infrastructure/fargate-local.sh
+	./infrastructure/fargate-local.sh
+
+fargate-local-destroy:
+	chmod u+x ./infrastructure/fargate-local-destroy.sh
+	./infrastructure/fargate-local-destroy.sh
 
 # CloudWatchのログを直接確認
 cloudwatch-log:
