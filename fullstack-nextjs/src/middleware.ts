@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import logger from './lib/logger'
 
 export async function middleware(request: NextRequest) {
   // ロギング対象外のパスはスキップ
@@ -8,22 +9,16 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    // ロギングAPIを呼び出し
-    await fetch(`${request.nextUrl.origin}/api/logging`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        method: request.method,
-        origin: request.nextUrl.origin,
-        pathname: request.nextUrl.pathname,
-        headers: Object.fromEntries(request.headers),
-        timestamp: new Date().toISOString()
-      })
-    })
+    // Winstonを使用して標準出力にログを書き出し
+    logger.info('API Request', {
+      method: request.method,
+      origin: request.nextUrl.origin,
+      pathname: request.nextUrl.pathname,
+      headers: Object.fromEntries(request.headers),
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    console.error('Logging failed:', error)
+    logger.error('Logging failed:', { error });
   }
 
   return NextResponse.next()

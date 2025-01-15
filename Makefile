@@ -29,6 +29,11 @@ fargate-local-destroy:
 	chmod u+x ./infrastructure/fargate-local-destroy.sh
 	./infrastructure/fargate-local-destroy.sh
 
+docker-local:
+	chmod u+x ./infrastructure/docker-local.sh
+	./infrastructure/docker-local.sh
+
+
 # CloudWatchのログを直接確認
 cloudwatch-log:
 	aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --follow
