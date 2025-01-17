@@ -23,9 +23,12 @@ export async function GET() {
     // CPUテスト
     const cpuStartTime = Date.now();
     // CPU負荷をかけるためのループ
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    let dummy = 0;
     while (Date.now() - cpuStartTime < 2000) {
-      Math.random() * Math.random();
+      dummy += Math.random() * Math.random(); // 結果を変数に代入
     }
+    /* eslint-enable @typescript-eslint/no-unused-vars */
     metrics.cpuDuration = Date.now() - cpuStartTime;
 
     return NextResponse.json({
