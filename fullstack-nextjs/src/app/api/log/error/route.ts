@@ -1,34 +1,43 @@
 import { NextResponse } from 'next/server';
 
+type ErrorResponse = {
+  status: string;
+  requestId: string;
+  message: string;
+  errorCode: string;
+  severity: string;
+  stack?: string;
+  timestamp: string;
+  duration: number;
+};
+
 export async function GET() {
   const startTime = Date.now();
   const requestId = Math.random().toString(36).substring(7);
 
   try {
-    // 意図的にエラーを発生させる
     throw new Error('Intentionally thrown error for testing');
-
-    // 以下のコードは実行されない
-    return NextResponse.json({ 
-      status: 'error',
-      requestId,
-      message: 'Test error log generated',
-      errorCode: 'TEST_ERROR_001',
-      severity: 'low',
-      timestamp: new Date().toISOString(),
-      duration: Date.now() - startTime 
-    });
-
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({
+        status: 'error',
+        requestId,
+        message: error.message,
+        errorCode: 'TEST_ERROR_500',
+        severity: 'high',
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - startTime 
+      } as ErrorResponse, { status: 500 });
+    }
     return NextResponse.json({
       status: 'error',
       requestId,
-      message: error.message,
+      message: 'Unknown error occurred',
       errorCode: 'TEST_ERROR_500',
       severity: 'high',
-      stack: error.stack,
       timestamp: new Date().toISOString(),
       duration: Date.now() - startTime 
-    }, { status: 500 });
+    } as ErrorResponse, { status: 500 });
   }
 }

@@ -1,11 +1,25 @@
 import { NextResponse } from 'next/server';
 
-// メモリ使用量テスト用の配列
-let memoryLeakArray: any[] = [];
+type MemoryData = string[];
+const memoryLeakArray: MemoryData[] = [];
+
+type Metrics = {
+  startTime: number;
+  memoryUsage: NodeJS.MemoryUsage;
+  memoryUsageAfter?: NodeJS.MemoryUsage;
+  asyncDuration: number;
+};
+
+type ApiResponse = {
+  status: string;
+  metrics: Metrics;
+  totalDuration: number;
+  error?: string;
+};
 
 export async function GET() {
   const startTime = Date.now();
-  const metrics: any = {
+  const metrics: Metrics = {
     startTime,
     memoryUsage: process.memoryUsage(),
     asyncDuration: 0,
@@ -31,14 +45,22 @@ export async function GET() {
       status: 'success',
       metrics,
       totalDuration: Date.now() - startTime
-    });
+    } as ApiResponse);
 
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({
+        status: 'error',
+        error: error.message,
+        metrics,
+        totalDuration: Date.now() - startTime
+      } as ApiResponse, { status: 500 });
+    }
     return NextResponse.json({
       status: 'error',
-      error: error.message,
+      error: 'Unknown error occurred',
       metrics,
       totalDuration: Date.now() - startTime
-    }, { status: 500 });
+    } as ApiResponse, { status: 500 });
   }
 }

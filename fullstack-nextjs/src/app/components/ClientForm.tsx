@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { logBasicAction } from "../actions/logBasicActions";
 
 type LogState = {
@@ -49,4 +49,4 @@ export default function ClientForm() {
       </main>
     </div>
   );
-} 
+}
