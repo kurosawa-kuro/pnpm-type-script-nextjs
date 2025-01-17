@@ -1,33 +1,47 @@
-### ==================== 基本エンドポイント ====================
+### ==================== 環境変数 ====================
 @baseUrl = http://localhost:3000
 @baseUrlEcs = http://43.206.115.251:3000
 
+
+
+### ==================== ECS環境テスト ====================
+### ベース
+GET {{baseUrlEcs}}
+
+### ロギング関連
+### 基本ログ
+GET {{baseUrlEcs}}/api/log/basic
+
+### エラーログ
+GET {{baseUrlEcs}}/api/log/error
+
+### 情報ログ
+GET {{baseUrlEcs}}/api/log/info
+
+### メトリクス関連
+### CPU負荷テスト
+GET {{baseUrlEcs}}/api/metrics/cpu-test
+
+### メモリ負荷テスト
+GET {{baseUrlEcs}}/api/metrics/memory-test
+
+### ==================== ローカル環境テスト ====================
 ### ベース
 GET {{baseUrl}}
 
-### テストエンドポイント
-GET {{baseUrl}}/api/test
+### ロギング関連
+### 基本ログ
+GET {{baseUrl}}/api/log/basic
 
-### ==================== ECS環境テスト ====================
-### ECSベース
-GET {{baseUrlEcs}}
+### エラーログ
+GET {{baseUrl}}/api/log/error
 
-### ECSテストエンドポイント
-GET {{baseUrlEcs}}/api/test
+### 情報ログ
+GET {{baseUrl}}/api/log/info
 
-### ==================== モニタリング関連 ====================
-### ロギング
-POST {{baseUrl}}/api/logging
-
-### ヘルスチェック
-GET {{baseUrl}}/health
-
-### ==================== 負荷テスト ====================
+### メトリクス関連
 ### CPU負荷テスト
-GET {{baseUrl}}/cpu-test
+GET {{baseUrl}}/api/metrics/cpu-test
 
 ### メモリ負荷テスト
-GET {{baseUrl}}/memory-test
-
-### エラーシミュレーション
-GET {{baseUrl}}/error-test
+GET {{baseUrl}}/api/metrics/memory-test

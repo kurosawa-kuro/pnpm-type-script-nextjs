@@ -26,6 +26,6 @@ export async function middleware(request: NextRequest) {
 }
 
 // ミドルウェアを適用するパスを設定
-export const config = {
-  matcher: '/api/:path*'
-}
+// export const config = {
+//   matcher: '/api/:path*'
+// }
