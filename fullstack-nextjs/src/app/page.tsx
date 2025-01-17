@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { logBasicAction } from "./actions/logActions";
 
 export default function Home() {
   return (
@@ -47,6 +48,14 @@ export default function Home() {
           >
             Read our docs
           </a>
+          <form action={logBasicAction}>
+            <button
+              type="submit"
+              className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
+            >
+              Log Action Test
+            </button>
+          </form>
         </div>
       </main>
       <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
