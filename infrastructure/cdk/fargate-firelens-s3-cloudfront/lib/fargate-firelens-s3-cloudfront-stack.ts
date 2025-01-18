@@ -19,6 +19,7 @@ import { Effect } from "aws-cdk-lib/aws-iam";
 import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 
 const PREFIX = 'cdk-faragate-01';
 
@@ -62,9 +63,129 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     );
 
     // VPC
-    const vpc = new ec2.Vpc(this, `${PREFIX}-vpc`, { 
-      maxAzs: 2, 
-      natGateways: 0 
+    const vpc = new ec2.Vpc(this, `${PREFIX}-vpc`, {
+      vpcName: `${PREFIX}-vpc`,
+      ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [{
+        name: 'Public',
+        subnetType: ec2.SubnetType.PUBLIC,
+        mapPublicIpOnLaunch: true,
+        cidrMask: 24
+      }],
+      createInternetGateway: false
+    });
+
+    // VPCのLogical IDを設定
+    const cfnVpc = vpc.node.defaultChild as ec2.CfnVPC;
+    cfnVpc?.overrideLogicalId(`${PREFIX}-vpc`);
+
+    // IGWの作成
+    const igw = new ec2.CfnInternetGateway(this, 'IGW', {
+      tags: [{ key: 'Name', value: `${PREFIX}-igw` }]
+    });
+    igw.overrideLogicalId(`${PREFIX}-igw`);
+
+    // IGWのアタッチ
+    const vpcGatewayAttachment = new ec2.CfnVPCGatewayAttachment(this, 'VPCGW', {
+      vpcId: vpc.vpcId,
+      internetGatewayId: igw.ref
+    });
+    vpcGatewayAttachment.overrideLogicalId(`${PREFIX}-vpc-gateway-attachment`);
+
+    // パブリックサブネットの設定
+    vpc.publicSubnets.forEach((subnet, index) => {
+      const az = index === 0 ? 'a' : 'c';
+      const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
+      
+      // サブネットの設定
+      cfnSubnet.overrideLogicalId(`${PREFIX}-public-subnet-1${az}`);
+      cfnSubnet.addPropertyOverride('Tags', [
+        { Key: 'Name', Value: `${PREFIX}-public-subnet-1${az}` }
+      ]);
+
+      // ルートテーブルの設定
+      const routeTable = subnet.node.findChild('RouteTable') as ec2.CfnRouteTable;
+      routeTable.overrideLogicalId(`${PREFIX}-public-rt-1${az}`);
+      routeTable.addPropertyOverride('Tags', [
+        { Key: 'Name', Value: `${PREFIX}-public-rt-1${az}` }
+      ]);
+
+      // パブリックルートの追加
+      const publicRoute = new ec2.CfnRoute(this, `PublicRoute${index}`, {
+        routeTableId: routeTable.ref,
+        destinationCidrBlock: '0.0.0.0/0',
+        gatewayId: igw.ref,
+      });
+      publicRoute.overrideLogicalId(`${PREFIX}-public-route-1${az}`);
+      publicRoute.addDependency(vpcGatewayAttachment);
+    });
+
+    // ALB用のセキュリティグループ
+    const albSecurityGroup = new ec2.SecurityGroup(this, `${PREFIX}-alb-sg`, {
+      vpc,
+      securityGroupName: `${PREFIX}-alb-sg`,
+      description: 'Security group for ALB',
+      allowAllOutbound: true,
+    });
+
+    albSecurityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80),
+      'Allow HTTP'
+    );
+
+    // Fargate用のセキュリティグループ
+    const fargateSecurityGroup = new ec2.SecurityGroup(
+      this,
+      `${PREFIX}-fargate-sg`,
+      {
+        vpc,
+        securityGroupName: `${PREFIX}-fargate-sg`,
+        description: 'Security group for Fargate containers'
+      }
+    );
+
+    fargateSecurityGroup.addIngressRule(
+      ec2.Peer.securityGroupId(albSecurityGroup.securityGroupId),
+      ec2.Port.tcp(80),
+      'Allow traffic from ALB'
+    );
+
+    // ALBの作成
+    const alb = new elbv2.ApplicationLoadBalancer(this, `${PREFIX}-alb`, {
+      vpc,
+      internetFacing: true,
+      securityGroup: albSecurityGroup,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }
+    });
+
+    // ターゲットグループの作成
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, `${PREFIX}-target-group`, {
+      vpc,
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      healthCheck: {
+        path: '/health',
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 2,
+        timeout: Duration.seconds(5),
+        interval: Duration.seconds(30),
+      }
+    });
+
+    // リスナーの追加
+    alb.addListener(`${PREFIX}-http-listener`, {
+      port: 80,
+      defaultTargetGroups: [targetGroup]
+    });
+
+    // 出力の追加
+    new CfnOutput(this, 'AlbDnsName', {
+      value: alb.loadBalancerDnsName,
+      description: 'ALB DNS Name'
     });
 
     // Add VPC Endpoints
@@ -83,29 +204,6 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     vpc.addGatewayEndpoint('s3-endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
-
-    // Security Group for Fargate
-    const fargateSecurityGroup = new ec2.SecurityGroup(
-      this,
-      `${PREFIX}-fargate-sg`,
-      {
-        vpc,
-        description: 'Security group for Fargate containers'
-      }
-    );
-
-    // Add ingress rules for ports 80 and 3000
-    fargateSecurityGroup.addIngressRule(
-      ec2.Peer.ipv4("0.0.0.0/0"),
-      ec2.Port.tcp(80),
-      'Allow HTTP traffic'
-    );
-
-    fargateSecurityGroup.addIngressRule(
-      ec2.Peer.ipv4("0.0.0.0/0"),
-      ec2.Port.tcp(3000),
-      'Allow traffic on port 3000'
-    );
 
     // ECS Cluster
     const cluster = new ecs.Cluster(this, `${PREFIX}-cluster`, { vpc });
