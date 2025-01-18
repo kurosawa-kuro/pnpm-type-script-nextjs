@@ -5,9 +5,14 @@ import {
   aws_iam as iam,
   aws_s3 as s3,
   aws_s3_assets as assets,
+  aws_cloudfront as cloudfront,
+  aws_cloudfront_origins as origins,
+  aws_s3_deployment as s3deploy,
   RemovalPolicy,
   Stack,
   StackProps,
+  CfnOutput,
+  Duration,
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
 import { Effect } from "aws-cdk-lib/aws-iam";
@@ -164,6 +169,66 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
         ],
       }
     );
+
+    // 画像保存用S3バケット
+    const imageBucket = new s3.Bucket(this, `${PREFIX}-image-bucket`, {
+      removalPolicy: RemovalPolicy.DESTROY, // 開発用
+      autoDeleteObjects: true, // 開発用
+      cors: [
+        {
+          allowedMethods: [
+            s3.HttpMethods.GET,
+            s3.HttpMethods.POST,
+            s3.HttpMethods.PUT,
+          ],
+          allowedOrigins: ['*'], // 開発用
+          allowedHeaders: ['*'],
+        },
+      ],
+    });
+
+    // CloudFront Distribution
+    const distribution = new cloudfront.Distribution(this, `${PREFIX}-distribution`, {
+      defaultBehavior: {
+        origin: new origins.S3Origin(imageBucket),
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+      },
+      enableLogging: true,
+      logBucket: logBucket, // 既存のログバケットを使用
+      logFilePrefix: 'cloudfront-logs/',
+    });
+
+    // タスクロールにS3とCloudFront権限を追加
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:DeleteObject",
+          "cloudfront:CreateInvalidation",
+        ],
+        resources: [
+          imageBucket.arnForObjects('*'),
+          imageBucket.bucketArn,
+          `arn:aws:cloudfront::${this.account}:distribution/${distribution.distributionId}`,
+        ],
+      })
+    );
+
+    // 環境変数をコンテナに追加
+    taskDefinition.defaultContainer?.addEnvironment('S3_BUCKET_NAME', imageBucket.bucketName);
+    taskDefinition.defaultContainer?.addEnvironment('CLOUDFRONT_DISTRIBUTION_ID', distribution.distributionId);
+    taskDefinition.defaultContainer?.addEnvironment('CLOUDFRONT_DOMAIN_NAME', distribution.distributionDomainName);
+
+    // 出力
+    new CfnOutput(this, 'ImageBucketName', { value: imageBucket.bucketName });
+    new CfnOutput(this, 'CloudFrontDomain', { value: distribution.distributionDomainName });
+    new CfnOutput(this, 'CloudFrontDistributionId', { value: distribution.distributionId });
 
     // Fargate Service
     new ecs.FargateService(this, `${PREFIX}-fargate-service`, {
