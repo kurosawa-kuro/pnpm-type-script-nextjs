@@ -1,6 +1,6 @@
 ### ==================== 環境変数 ====================
 @baseUrl = http://localhost:3000
-@baseUrlEcs = http://35.76.115.255:3000
+@baseUrlEcs = http://35.76.116.213:3000
 
 
 
@@ -9,14 +9,11 @@
 GET {{baseUrlEcs}}
 
 ### ロギング関連
-### 基本ログ
-GET {{baseUrlEcs}}/api/log/basic
+### 情報ログ
+GET {{baseUrlEcs}}/api/log/info
 
 ### エラーログ
 GET {{baseUrlEcs}}/api/log/error
-
-### 情報ログ
-GET {{baseUrlEcs}}/api/log/info
 
 ### メトリクス関連
 ### CPU負荷テスト
