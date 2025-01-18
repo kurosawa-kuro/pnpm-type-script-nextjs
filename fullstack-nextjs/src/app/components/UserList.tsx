@@ -2,7 +2,14 @@
 
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { User } from '@prisma/client';
+
+interface User {
+  id: string;
+  email: string;
+  image_path: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export default function UserList() {
   const [users, setUsers] = useState<User[]>([]);
