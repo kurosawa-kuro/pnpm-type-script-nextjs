@@ -15,7 +15,7 @@ import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 
-const PREFIX = 'cdk-faragate-fluent-03';
+const PREFIX = 'cdk-faragate-fluent-04';
 
 export class CdkEcsFirelensStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
