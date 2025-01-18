@@ -18,7 +18,6 @@ const CONFIG = {
 const app = new cdk.App();
 
 const commonResources = new CommonResourceStack(app, 'CommonResourceStack', {
-  prefix: CONFIG.prefix,
 });
 
 new FargateFirelensS3CloudfrontStack(app, 'FargateFirelensS3CloudfrontStack', {
