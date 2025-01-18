@@ -35,12 +35,37 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     const logBucket = new s3.Bucket(this, `${PREFIX}-log-bucket`, {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
 
     new firehose.DeliveryStream(this, `${PREFIX}-delivery-stream`, {
       deliveryStreamName: `${PREFIX}-delivery-stream`,
       destination: new destinations.S3Bucket(logBucket),
     });
+
+    // CloudFrontログ用のバケットポリシーを追加
+    logBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        principals: [
+          new iam.ServicePrincipal('cloudfront.amazonaws.com')
+        ],
+        actions: [
+          's3:PutObject',
+          's3:GetBucketAcl'
+        ],
+        resources: [
+          logBucket.arnForObjects('*'),
+          logBucket.bucketArn
+        ],
+        conditions: {
+          StringEquals: {
+            'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/*`
+          }
+        }
+      })
+    );
 
     // VPC
     const vpc = new ec2.Vpc(this, `${PREFIX}-vpc`, { 
@@ -197,8 +222,9 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
         originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
       },
       enableLogging: true,
-      logBucket: logBucket, // 既存のログバケットを使用
+      logBucket: logBucket,
       logFilePrefix: 'cloudfront-logs/',
+      logIncludesCookies: true,
     });
 
     // タスクロールにS3とCloudFront権限を追加
