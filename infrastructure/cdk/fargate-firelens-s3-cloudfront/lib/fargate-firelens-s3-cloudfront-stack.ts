@@ -226,6 +226,33 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
+        responseHeadersPolicy: new cloudfront.ResponseHeadersPolicy(this, `${PREFIX}-country-headers-policy`, {
+          responseHeadersPolicyName: `${PREFIX}-country-headers`,
+          customHeadersBehavior: {
+            customHeaders: [
+              {
+                header: 'CloudFront-Viewer-Country',
+                value: '${CloudFront-Viewer-Country}',
+                override: true
+              },
+              {
+                header: 'CloudFront-Viewer-Country-Name',
+                value: '${CloudFront-Viewer-Country-Name}',
+                override: true
+              },
+              {
+                header: 'CloudFront-Viewer-Country-Region',
+                value: '${CloudFront-Viewer-Country-Region}',
+                override: true
+              },
+              {
+                header: 'CloudFront-Viewer-City',
+                value: '${CloudFront-Viewer-City}',
+                override: true
+              }
+            ]
+          }
+        })
       },
       enableLogging: true,
       logBucket: logBucket,
