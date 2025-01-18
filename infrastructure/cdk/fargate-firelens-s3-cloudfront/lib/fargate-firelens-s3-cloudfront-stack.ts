@@ -51,14 +51,8 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
         principals: [
           new iam.ServicePrincipal('cloudfront.amazonaws.com')
         ],
-        actions: [
-          's3:PutObject',
-          's3:GetBucketAcl'
-        ],
-        resources: [
-          logBucket.arnForObjects('*'),
-          logBucket.bucketArn
-        ],
+        actions: ['s3:PutObject'],
+        resources: [logBucket.arnForObjects('*')],
         conditions: {
           StringEquals: {
             'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/*`
@@ -197,35 +191,104 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
 
     // 画像保存用S3バケット
     const imageBucket = new s3.Bucket(this, `${PREFIX}-image-bucket`, {
-      removalPolicy: RemovalPolicy.DESTROY, // 開発用
-      autoDeleteObjects: true, // 開発用
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       cors: [
         {
-          allowedMethods: [
-            s3.HttpMethods.GET,
-            s3.HttpMethods.POST,
-            s3.HttpMethods.PUT,
-          ],
-          allowedOrigins: ['*'], // 開発用
           allowedHeaders: ['*'],
+          allowedMethods: [
+            s3.HttpMethods.PUT,
+            s3.HttpMethods.POST,
+            s3.HttpMethods.GET,
+            s3.HttpMethods.DELETE,
+          ],
+          allowedOrigins: ['*'],
+          exposedHeaders: [],
         },
       ],
     });
 
     // CloudFront Distribution
+    const oac = new cloudfront.CfnOriginAccessControl(this, `${PREFIX}-oac`, {
+      originAccessControlConfig: {
+        name: `${PREFIX}-oac`,
+        originAccessControlOriginType: 's3',
+        signingBehavior: 'always',
+        signingProtocol: 'sigv4'
+      }
+    });
+
     const distribution = new cloudfront.Distribution(this, `${PREFIX}-distribution`, {
       defaultBehavior: {
         origin: new origins.S3Origin(imageBucket),
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+        originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
       },
       enableLogging: true,
       logBucket: logBucket,
       logFilePrefix: 'cloudfront-logs/',
       logIncludesCookies: true,
     });
+
+    // Configure Origin Access Control
+    const cfnDistribution = distribution.node.defaultChild as cloudfront.CfnDistribution;
+    cfnDistribution.addPropertyOverride('DistributionConfig.Origins.0.S3OriginConfig.OriginAccessIdentity', '');
+    cfnDistribution.addPropertyOverride('DistributionConfig.Origins.0.OriginAccessControlId', oac.ref);
+
+    // S3バケットポリシーを更新
+    imageBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        principals: [
+          new iam.ServicePrincipal('cloudfront.amazonaws.com')
+        ],
+        actions: ['s3:GetObject'],
+        resources: [imageBucket.arnForObjects('*')],
+        conditions: {
+          StringEquals: {
+            'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${distribution.distributionId}`
+          }
+        }
+      })
+    );
+
+    // CloudFront Service Principal用のポリシー
+    imageBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowCloudFrontServicePrincipal',
+        effect: iam.Effect.ALLOW,
+        principals: [
+          new iam.ServicePrincipal('cloudfront.amazonaws.com')
+        ],
+        actions: ['s3:GetObject'],
+        resources: [imageBucket.arnForObjects('*')],
+        conditions: {
+          StringEquals: {
+            'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${distribution.distributionId}`
+          }
+        }
+      })
+    );
+
+    // IAMユーザーアクセス用のポリシーを追加
+    imageBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowIAMUserAccess',
+        effect: iam.Effect.ALLOW,
+        principals: [
+          new iam.AccountRootPrincipal()
+        ],
+        actions: [
+          's3:PutObject',
+          's3:GetObject',
+          's3:DeleteObject'
+        ],
+        resources: [imageBucket.arnForObjects('*')]
+      })
+    );
 
     // タスクロールにS3とCloudFront権限を追加
     taskRole.addToPolicy(
