@@ -1,44 +1,49 @@
-### ==================== 環境変数 ====================
-@baseUrl = http://localhost:3000
-@baseUrlEcs = http://35.78.78.241:3000
+### ==================== 環境設定 ====================
+@localHost = localhost
+@ecsHost = 35.78.78.241
+@localPort = 3000
+@ecsPort = 3000
+
+### Base URLs
+@localBaseUrl = http://{{localHost}}:{{localPort}}
+@ecsBaseUrl = http://{{ecsHost}}:{{ecsPort}}
+
+### ==================== ヘルスチェック ====================
+### Local - Health Check
+GET {{localBaseUrl}}
+
+### ECS - Health Check
+GET {{ecsBaseUrl}}
+
+### ==================== ログAPI ====================
+### Local - Logging Endpoints
+# 情報ログ
+GET {{localBaseUrl}}/api/log/info
+
+# エラーログ
+GET {{localBaseUrl}}/api/log/error
+
+# CPU負荷テスト
+GET {{localBaseUrl}}/api/metrics/cpu-test
+
+# メモリ負荷テスト
+GET {{localBaseUrl}}/api/metrics/memory-test
+
+### ECS - Logging Endpoints
+# 情報ログ
+GET {{ecsBaseUrl}}/api/log/info
+
+# エラーログ
+GET {{ecsBaseUrl}}/api/log/error
+
+# CPU負荷テスト
+GET {{ecsBaseUrl}}/api/metrics/cpu-test
+
+# メモリ負荷テスト
+GET {{ecsBaseUrl}}/api/metrics/memory-test
+
+### ==================== メトリクスAPI ====================
+### Local - Performance Tests
 
 
-
-### ==================== ECS環境テスト ====================
-### ベース
-GET {{baseUrlEcs}}
-
-### ロギング関連
-### 情報ログ
-GET {{baseUrlEcs}}/api/log/info
-
-### エラーログ
-GET {{baseUrlEcs}}/api/log/error
-
-### メトリクス関連
-### CPU負荷テスト
-GET {{baseUrlEcs}}/api/metrics/cpu-test
-
-### メモリ負荷テスト
-GET {{baseUrlEcs}}/api/metrics/memory-test
-
-### ==================== ローカル環境テスト ====================
-### ベース
-GET {{baseUrl}}
-
-### ロギング関連
-### 基本ログ
-GET {{baseUrl}}/api/log/basic
-
-### エラーログ
-GET {{baseUrl}}/api/log/error
-
-### 情報ログ
-GET {{baseUrl}}/api/log/info
-
-### メトリクス関連
-### CPU負荷テスト
-GET {{baseUrl}}/api/metrics/cpu-test
-
-### メモリ負荷テスト
-GET {{baseUrl}}/api/metrics/memory-test
+### ECS - Performance Tests
