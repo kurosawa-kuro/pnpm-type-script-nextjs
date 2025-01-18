@@ -20,28 +20,44 @@ import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 
-const PREFIX = 'cdk_fargate_01';
+const PREFIX = 'cdkfargate01';
+
+// キャメルケース変換用のヘルパー関数
+function toCamelCase(str: string): string {
+  return str
+    .split('-')
+    .map((word, index) => 
+      index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    )
+    .join('');
+}
+
+// 使用例
+function getResourceName(resourceType: string): string {
+  return `${PREFIX}${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1)}`;
+}
 
 export class FargateFirelensS3CloudfrontStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     // Assets
-    const asset = new assets.Asset(this, `${PREFIX}-asset`, {
+    const asset = new assets.Asset(this, getResourceName('asset'), {
       path: path.join(__dirname, "extra.conf"),
     });
 
     // Firehose
-    const logBucket = new s3.Bucket(this, `${PREFIX}-log-bucket`, {
+    const logBucket = new s3.Bucket(this, getResourceName('logBucket'), {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
 
-    new firehose.DeliveryStream(this, `${PREFIX}-delivery-stream`, {
-      deliveryStreamName: `${PREFIX}-delivery-stream`,
+    new firehose.DeliveryStream(this, getResourceName('deliveryStream'), {
+      deliveryStreamName: getResourceName('deliveryStream'),
       destination: new destinations.S3Bucket(logBucket),
     });
 
@@ -63,8 +79,8 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     );
 
     // VPC
-    const vpc = new ec2.Vpc(this, `${PREFIX}-vpc`, {
-      vpcName: `${PREFIX}-vpc`,
+    const vpc = new ec2.Vpc(this, getResourceName('vpc'), {
+      vpcName: getResourceName('vpc'),
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
       maxAzs: 2,
       natGateways: 0,
@@ -79,20 +95,24 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
 
     // VPCのLogical IDを設定
     const cfnVpc = vpc.node.defaultChild as ec2.CfnVPC;
-    cfnVpc?.overrideLogicalId(`${PREFIX}-vpc`);
+    cfnVpc?.overrideLogicalId(getResourceName('vpc'));
 
     // IGWの作成
-    const igw = new ec2.CfnInternetGateway(this, 'IGW', {
-      tags: [{ key: 'Name', value: `${PREFIX}-igw` }]
+    const igw = new ec2.CfnInternetGateway(this, getResourceName('igw'), {
+      tags: [{ key: 'Name', value: getResourceName('igw') }]
     });
-    igw.overrideLogicalId(`${PREFIX}-igw`);
+    igw.overrideLogicalId(getResourceName('igw'));
 
     // IGWのアタッチ
-    const vpcGatewayAttachment = new ec2.CfnVPCGatewayAttachment(this, 'VPCGW', {
-      vpcId: vpc.vpcId,
-      internetGatewayId: igw.ref
-    });
-    vpcGatewayAttachment.overrideLogicalId(`${PREFIX}-vpc-gateway-attachment`);
+    const vpcGatewayAttachment = new ec2.CfnVPCGatewayAttachment(
+      this, 
+      getResourceName('vpcGatewayAttachment'),
+      {
+        vpcId: vpc.vpcId,
+        internetGatewayId: igw.ref
+      }
+    );
+    vpcGatewayAttachment.overrideLogicalId(getResourceName('vpcGatewayAttachment'));
 
     // パブリックサブネットの設定
     vpc.publicSubnets.forEach((subnet, index) => {
@@ -100,16 +120,16 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
       const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
       
       // サブネットの設定
-      cfnSubnet.overrideLogicalId(`${PREFIX}-public-subnet-1${az}`);
+      cfnSubnet.overrideLogicalId(getResourceName(`publicSubnet1${az}`));
       cfnSubnet.addPropertyOverride('Tags', [
-        { Key: 'Name', Value: `${PREFIX}-public-subnet-1${az}` }
+        { Key: 'Name', Value: getResourceName(`publicSubnet1${az}`) }
       ]);
 
       // ルートテーブルの設定
       const routeTable = subnet.node.findChild('RouteTable') as ec2.CfnRouteTable;
-      routeTable.overrideLogicalId(`${PREFIX}-public-rt-1${az}`);
+      routeTable.overrideLogicalId(getResourceName(`publicRt1${az}`));
       routeTable.addPropertyOverride('Tags', [
-        { Key: 'Name', Value: `${PREFIX}-public-rt-1${az}` }
+        { Key: 'Name', Value: getResourceName(`publicRt1${az}`) }
       ]);
 
       // パブリックルートの追加
@@ -118,98 +138,49 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
         destinationCidrBlock: '0.0.0.0/0',
         gatewayId: igw.ref,
       });
-      publicRoute.overrideLogicalId(`${PREFIX}-public-route-1${az}`);
+      publicRoute.overrideLogicalId(getResourceName(`publicRoute1${az}`));
       publicRoute.addDependency(vpcGatewayAttachment);
     });
-
-    // ALB用のセキュリティグループ
-    const albSecurityGroup = new ec2.SecurityGroup(this, `${PREFIX}-alb-sg`, {
-      vpc,
-      securityGroupName: `${PREFIX}-alb-sg`,
-      description: 'Security group for ALB',
-      allowAllOutbound: true,
-    });
-
-    albSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      'Allow HTTP'
-    );
 
     // Fargate用のセキュリティグループ
     const fargateSecurityGroup = new ec2.SecurityGroup(
       this,
-      `${PREFIX}-fargate-sg`,
+      getResourceName('fargateSecurityGroup'),
       {
         vpc,
-        securityGroupName: `${PREFIX}-fargate-sg`,
+        securityGroupName: getResourceName('fargateSecurityGroup'),
         description: 'Security group for Fargate containers'
       }
     );
 
     fargateSecurityGroup.addIngressRule(
-      ec2.Peer.securityGroupId(albSecurityGroup.securityGroupId),
-      ec2.Port.tcp(80),
-      'Allow traffic from ALB'
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(3000),
+      'Allow traffic on port 3000'
     );
 
-    // ALBの作成
-    const alb = new elbv2.ApplicationLoadBalancer(this, `${PREFIX}-alb`, {
-      vpc,
-      internetFacing: true,
-      securityGroup: albSecurityGroup,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }
-    });
-
-    // ターゲットグループの作成
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, `${PREFIX}-target-group`, {
-      vpc,
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      healthCheck: {
-        path: '/health',
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 2,
-        timeout: Duration.seconds(5),
-        interval: Duration.seconds(30),
-      }
-    });
-
-    // リスナーの追加
-    alb.addListener(`${PREFIX}-http-listener`, {
-      port: 80,
-      defaultTargetGroups: [targetGroup]
-    });
-
-    // 出力の追加
-    new CfnOutput(this, 'AlbDnsName', {
-      value: alb.loadBalancerDnsName,
-      description: 'ALB DNS Name'
-    });
-
-    // Add VPC Endpoints
-    vpc.addInterfaceEndpoint('ecr-api-endpoint', {
+    // VPC Endpoints
+    vpc.addInterfaceEndpoint(getResourceName('ecrApiEndpoint'), {
       service: ec2.InterfaceVpcEndpointAwsService.ECR,
     });
 
-    vpc.addInterfaceEndpoint('ecr-docker-endpoint', {
+    vpc.addInterfaceEndpoint(getResourceName('ecrDockerEndpoint'), {
       service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
     });
 
-    vpc.addInterfaceEndpoint('cloudwatch-endpoint', {
+    vpc.addInterfaceEndpoint(getResourceName('cloudwatchEndpoint'), {
       service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
     });
 
-    vpc.addGatewayEndpoint('s3-endpoint', {
+    vpc.addGatewayEndpoint(getResourceName('s3Endpoint'), {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
 
     // ECS Cluster
-    const cluster = new ecs.Cluster(this, `${PREFIX}-cluster`, { vpc });
+    const cluster = new ecs.Cluster(this, getResourceName('cluster'), { vpc });
 
     // Task Role
-    const taskRole = new iam.Role(this, `${PREFIX}-task-role`, {
+    const taskRole = new iam.Role(this, getResourceName('taskRole'), {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
     });
 
@@ -232,7 +203,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     // Task Definition
     const taskDefinition = new ecs.FargateTaskDefinition(
       this,
-      `${PREFIX}-task-definition`,
+      getResourceName('taskDefinition'),
       {
         cpu: 512,
         memoryLimitMiB: 1024,
@@ -255,7 +226,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     );
 
     // Fluent Bit Log Router
-    taskDefinition.addFirelensLogRouter(`${PREFIX}-log-router`, {
+    taskDefinition.addFirelensLogRouter(getResourceName('logRouter'), {
       firelensConfig: {
         type: FirelensLogRouterType.FLUENTBIT,
       },
@@ -272,7 +243,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
 
     // Container Definition
     taskDefinition.defaultContainer = taskDefinition.addContainer(
-      `${PREFIX}-nextjs`,
+      getResourceName('nextjs'),
       {
         image: ecs.ContainerImage.fromRegistry(
           "985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app"
@@ -281,14 +252,14 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
           options: {},
         }),
         portMappings: [
-          { containerPort: 80 },
+          // { containerPort: 80 },
           { containerPort: 3000 }
         ],
       }
     );
 
     // 画像保存用S3バケット
-    const imageBucket = new s3.Bucket(this, `${PREFIX}-image-bucket`, {
+    const imageBucket = new s3.Bucket(this, getResourceName('imageBucket'), {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -308,55 +279,53 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     });
 
     // CloudFront Distribution
-    const oac = new cloudfront.CfnOriginAccessControl(this, `${PREFIX}-oac`, {
-      originAccessControlConfig: {
-        name: `${PREFIX}-oac`,
-        originAccessControlOriginType: 's3',
-        signingBehavior: 'always',
-        signingProtocol: 'sigv4'
+    const oac = new cloudfront.CfnOriginAccessControl(
+      this, 
+      getResourceName('oac'),
+      {
+        originAccessControlConfig: {
+          name: getResourceName('oac'),
+          originAccessControlOriginType: 's3',
+          signingBehavior: 'always',
+          signingProtocol: 'sigv4'
+        }
       }
-    });
+    );
 
-    const distribution = new cloudfront.Distribution(this, `${PREFIX}-distribution`, {
-      defaultBehavior: {
-        origin: new origins.S3Origin(imageBucket),
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
-        responseHeadersPolicy: new cloudfront.ResponseHeadersPolicy(this, `${PREFIX}-country-headers-policy`, {
-          responseHeadersPolicyName: `${PREFIX}-country-headers`,
-          customHeadersBehavior: {
-            customHeaders: [
-              {
-                header: 'CloudFront-Viewer-Country',
-                value: '${CloudFront-Viewer-Country}',
-                override: true
-              },
-              {
-                header: 'CloudFront-Viewer-Country-Name',
-                value: '${CloudFront-Viewer-Country-Name}',
-                override: true
-              },
-              {
-                header: 'CloudFront-Viewer-Country-Region',
-                value: '${CloudFront-Viewer-Country-Region}',
-                override: true
-              },
-              {
-                header: 'CloudFront-Viewer-City',
-                value: '${CloudFront-Viewer-City}',
-                override: true
-              }
-            ]
-          }
-        })
-      },
-      enableLogging: true,
-      logBucket: logBucket,
-      logFilePrefix: 'cloudfront-logs/',
-      logIncludesCookies: true,
-    });
+    const distribution = new cloudfront.Distribution(
+      this, 
+      getResourceName('distribution'),
+      {
+        defaultBehavior: {
+          origin: new origins.S3Origin(imageBucket),
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
+          responseHeadersPolicy: new cloudfront.ResponseHeadersPolicy(this, `${PREFIX}-country-headers-policy`, {
+            responseHeadersPolicyName: `${PREFIX}-country-headers`,
+            customHeadersBehavior: {
+              customHeaders: [
+                {
+                  header: 'CloudFront-Viewer-Country',
+                  value: '${CloudFront-Viewer-Country}',
+                  override: true
+                },
+                {
+                  header: 'CloudFront-Viewer-Country-Name',
+                  value: '${CloudFront-Viewer-Country-Name}',
+                  override: true
+                }
+              ]
+            }
+          })
+        },
+        enableLogging: true,
+        logBucket: logBucket,
+        logFilePrefix: 'cloudfront-logs/',
+        logIncludesCookies: true,
+      }
+    );
 
     // Configure Origin Access Control
     const cfnDistribution = distribution.node.defaultChild as cloudfront.CfnDistribution;
@@ -446,12 +415,12 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     new CfnOutput(this, 'CloudFrontDistributionId', { value: distribution.distributionId });
 
     // Fargate Service
-    new ecs.FargateService(this, `${PREFIX}-fargate-service`, {
+    new ecs_patterns.ApplicationLoadBalancedFargateService(this, getResourceName('fargateService'), {
       cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1,
       assignPublicIp: true,
-      securityGroups: [fargateSecurityGroup],
+      securityGroups: [fargateSecurityGroup]
     });
   }
 }
