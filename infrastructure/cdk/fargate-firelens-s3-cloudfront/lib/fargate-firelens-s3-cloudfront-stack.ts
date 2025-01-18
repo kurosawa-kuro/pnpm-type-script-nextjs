@@ -21,7 +21,7 @@ import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 
-const PREFIX = 'cdk-faragate-01';
+const PREFIX = 'cdk_fargate_01';
 
 export class FargateFirelensS3CloudfrontStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -438,6 +438,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     taskDefinition.defaultContainer?.addEnvironment('S3_BUCKET_NAME', imageBucket.bucketName);
     taskDefinition.defaultContainer?.addEnvironment('CLOUDFRONT_DISTRIBUTION_ID', distribution.distributionId);
     taskDefinition.defaultContainer?.addEnvironment('CLOUDFRONT_DOMAIN_NAME', distribution.distributionDomainName);
+    taskDefinition.defaultContainer?.addEnvironment('DATABASE_URL', "postgresql://neondb_owner:Nrp3FfO1goiB@ep-noisy-cherry-a7rp6riz.ap-southeast-2.aws.neon.tech/neondb?sslmode=require");
 
     // 出力
     new CfnOutput(this, 'ImageBucketName', { value: imageBucket.bucketName });
