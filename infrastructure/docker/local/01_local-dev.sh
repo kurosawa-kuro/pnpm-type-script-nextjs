@@ -40,35 +40,33 @@ command -v pnpm >/dev/null 2>&1 || { echo "pnpmがインストールされてい
 # pnpm lockファイルの更新
 echo "依存関係を更新中..."
 cd ${NEXTJS_DIR}
-rm -rf node_modules
 pnpm install --no-frozen-lockfile
 
 # 既存のコンテナの確認と削除
 echo "既存のコンテナを確認中..."
-if docker ps -a | grep -q nextjs-local; then
-    echo "既存のnextjs-localコンテナを停止・削除中..."
-    docker stop nextjs-local >/dev/null 2>&1 || true
-    docker rm nextjs-local >/dev/null 2>&1 || true
+if docker ps -a | grep -q nextjs-prod; then
+    echo "既存のnextjs-prodコンテナを停止・削除中..."
+    docker stop nextjs-prod >/dev/null 2>&1 || true
+    docker rm nextjs-prod >/dev/null 2>&1 || true
 fi
 
 # イメージのビルド
-echo "Dockerイメージをビルド中..."
+echo "本番用Dockerイメージをビルド中..."
 docker build -t ${REPOSITORY_NAME}:${IMAGE_TAG} \
-    --build-arg NODE_ENV=development \
+    --build-arg NODE_ENV=production \
     --no-cache .
 
 # コンテナの実行
-echo "ローカルでコンテナを実行中..."
+echo "ローカルで本番用コンテナを実行中..."
 docker run -d \
     -p 3000:3000 \
-    --name nextjs-local \
-    -e NODE_ENV=development \
-    -v "${NEXTJS_DIR}/src:/app/src" \
+    --name nextjs-prod \
+    -e NODE_ENV=production \
     ${REPOSITORY_NAME}:${IMAGE_TAG}
 
 # コンテナの状態確認
 echo "コンテナの状態を確認中..."
-docker ps | grep nextjs-local
+docker ps | grep nextjs-prod
 
 # ヘルスチェック
 echo "アプリケーションの起動を待機中..."
