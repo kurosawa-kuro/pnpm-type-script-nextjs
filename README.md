@@ -29,3 +29,4 @@ aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --
 
 
 
+
