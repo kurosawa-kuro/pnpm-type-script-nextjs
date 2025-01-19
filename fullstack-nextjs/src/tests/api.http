@@ -1,7 +1,9 @@
 ### ==================== 環境設定 ====================
-@ecsHost = 54.178.232.176
+@ecsHost = 35.77.48.143
 @localHost = localhost
 @port = 3000
+
+http://35.77.48.143:3000
 
 ### Base URLs
 @ecsBaseUrl = http://{{ecsHost}}:{{port}}

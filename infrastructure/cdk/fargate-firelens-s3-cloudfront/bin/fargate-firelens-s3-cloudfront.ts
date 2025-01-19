@@ -3,7 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { FargateFirelensS3CloudfrontStack } from '../lib/fargate-firelens-s3-cloudfront-stack';
 import { CommonResourceStack } from '../lib/common-resource-stack';
 
-const VERSION = '10';
+const VERSION = '11';
 
 const CONFIG = {
   version: VERSION,
@@ -28,13 +28,13 @@ const commonResources = new CommonResourceStack(app, CONFIG.prefix + '-CommonRes
   }
 });
 
-new FargateFirelensS3CloudfrontStack(app, CONFIG.prefix + '-FargateFirelensS3CloudfrontStack', {
+new FargateFirelensS3CloudfrontStack(app, CONFIG.prefix + '-FargateFirelensS3CloudfrontStack', commonResources, {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION
   },
   config: CONFIG,
-  commonResources,
+  commonResources: commonResources
 });
 
 app.synth();

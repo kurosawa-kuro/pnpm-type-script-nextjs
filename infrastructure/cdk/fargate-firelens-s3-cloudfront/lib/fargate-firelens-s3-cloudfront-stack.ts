@@ -23,11 +23,14 @@ interface FargateFirelensS3CloudfrontStackProps extends StackProps {
 }
 
 export class FargateFirelensS3CloudfrontStack extends Stack {
-  constructor(scope: Construct, id: string, props: FargateFirelensS3CloudfrontStackProps) {
+  constructor(scope: Construct, id: string, commonStack: CommonResourceStack, props: FargateFirelensS3CloudfrontStackProps) {
     super(scope, id, props);
 
+    // CommonResourceStackへの依存関係を明示的に追加
+    this.addDependency(commonStack);
+
     // リソースの作成
-    const resources = this.createResources(props);
+    const resources = this.createResources({ ...props, commonResources: commonStack });
     
     // 出力の設定
     this.configureOutputs(resources);

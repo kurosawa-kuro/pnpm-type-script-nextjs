@@ -6,11 +6,15 @@ import {
   aws_ec2 as ec2,
   aws_iam as iam,
   aws_s3 as s3,
+  aws_s3_assets as assets,
   Stack,
   StackProps,
   RemovalPolicy
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
+import * as path from "path";
+import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
+import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 
 interface ContainerConfig {
   cpu: number;
@@ -28,6 +32,9 @@ interface ResourceConfig {
 }
 
 export class CommonResourceStack extends Stack {
+  public taskDefinition!: ecs.FargateTaskDefinition;
+  public asset!: assets.Asset;
+
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
   }
@@ -46,6 +53,22 @@ export class CommonResourceStack extends Stack {
           cidrMask: 24
         }
       ]
+    });
+
+    vpc.addInterfaceEndpoint('ecr-api-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR,
+    });
+
+    vpc.addInterfaceEndpoint('ecr-docker-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+    });
+
+    vpc.addInterfaceEndpoint('cloudwatch-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+    });
+
+    vpc.addGatewayEndpoint('s3-endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
     });
 
     const securityGroup = new ec2.SecurityGroup(this, resourceName + 'SecurityGroup', {
@@ -68,8 +91,11 @@ export class CommonResourceStack extends Stack {
     const logBucket = new s3.Bucket(this, resourceName + 'LogBucket', {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
-      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    });
+
+    new firehose.DeliveryStream(this, resourceName + 'DeliveryStream', {
+      deliveryStreamName: `${resourceName}-delivery-stream`,
+      destination: new destinations.S3Bucket(logBucket),
     });
 
     const imageBucket = new s3.Bucket(this, resourceName + 'ImageBucket', {
@@ -104,6 +130,20 @@ export class CommonResourceStack extends Stack {
       ],
     }));
 
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        "logs:CreateLogStream",
+        "logs:CreateLogGroup",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents",
+        "s3:GetObject",
+        "s3:GetBucketLocation",
+        "firehose:PutRecordBatch",
+      ],
+      resources: ["*"],
+    }));
+
     const executionRole = new iam.Role(this, prefix + 'ExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       roleName: prefix + 'ExecutionRole',
@@ -130,26 +170,44 @@ export class CommonResourceStack extends Stack {
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, config.prefix + 'TaskDef', {
       family: config.prefix + 'TaskDef',
-      cpu: config.containerConfig.cpu,
-      memoryLimitMiB: config.containerConfig.memoryLimitMiB,
+      cpu: 512,
+      memoryLimitMiB: 1024,
       taskRole,
       executionRole,
     });
 
+    taskDefinition.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ],
+        resources: ["*"]
+      })
+    );
+
+    const asset = new assets.Asset(this, config.prefix + 'ExtraConf', {
+      path: path.join(__dirname, "extra.conf"),
+    });
+
     const firelensLogRouter = taskDefinition.addFirelensLogRouter(config.prefix + 'Firelens', {
-      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/aws-for-fluent-bit:latest'),
       firelensConfig: {
         type: FirelensLogRouterType.FLUENTBIT,
       },
+      image: ecs.ContainerImage.fromRegistry(
+        "public.ecr.aws/aws-observability/aws-for-fluent-bit:init-latest"
+      ),
       memoryReservationMiB: config.containerConfig.firelensMemoryMiB,
-      logging: new ecs.AwsLogDriver({
+      logging: ecs.LogDrivers.awsLogs({
         streamPrefix: config.prefix + 'Firelens',
       }),
-    });
-
-    firelensLogRouter.addPortMappings({
-      containerPort: 24224,
-      protocol: ecs.Protocol.TCP
+      environment: {
+        AWS_REGION: Stack.of(this).region,
+        FLB_LOG_LEVEL: "info"
+      }
     });
 
     const appContainer = taskDefinition.addContainer(config.prefix + 'App', {
@@ -159,18 +217,32 @@ export class CommonResourceStack extends Stack {
       logging: ecs.LogDrivers.firelens({
         options: {
           Name: 's3',
-          region: this.region,
+          region: Stack.of(this).region,
           bucket: logBucket.bucketName,
           total_file_size: '1M',
           upload_timeout: '1m',
-        },
+          s3_key_format: '/fluent-bit-logs/$TAG/%Y/%m/%d/%H/%M/%S',
+          s3_key_format_tag_delimiters: '.'
+        }
       }),
+      portMappings: [
+        { containerPort: config.appPort },
+        { containerPort: 3000 }
+      ],
     });
 
-    appContainer.addPortMappings({
-      containerPort: config.appPort,
-      protocol: ecs.Protocol.TCP,
-    });
+    taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        's3:PutObject',
+        's3:GetObject',
+        's3:ListBucket'
+      ],
+      resources: [
+        logBucket.bucketArn,
+        `${logBucket.bucketArn}/*`
+      ]
+    }));
 
     const service = new ecs.FargateService(this, config.prefix + 'Service', {
       cluster,
@@ -178,8 +250,24 @@ export class CommonResourceStack extends Stack {
       desiredCount: 1,
       assignPublicIp: true,
       securityGroups: [securityGroup],
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }
+      vpcSubnets: { 
+        subnetType: ec2.SubnetType.PUBLIC,
+        onePerAz: true  // 各AZに1つのサブネットを確保
+      },
+      circuitBreaker: { rollback: true },  // サービスの自動ロールバックを有効化
+      capacityProviderStrategies: [
+        {
+          capacityProvider: 'FARGATE',
+          weight: 1,
+        }
+      ]
     });
+
+    // サービスのヘルスチェック設定
+    service.node.addDependency(cluster);  // クラスターへの依存関係を明示的に追加
+
+    this.taskDefinition = taskDefinition;
+    this.asset = asset;
 
     return { cluster, taskDefinition, service };
   }
