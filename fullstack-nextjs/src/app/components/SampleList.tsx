@@ -25,6 +25,7 @@ export default function SampleList() {
   }, []);
 
   // SampleFormで使用するために関数をexport
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).refreshSamples = fetchSamples;
     
   return (

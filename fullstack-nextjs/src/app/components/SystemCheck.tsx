@@ -127,6 +127,7 @@ export default function SystemCheck() {
     data 
   }: { 
     type: keyof typeof METRICS_CONFIG;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: any;
   }) => {
     if (!data) return null;

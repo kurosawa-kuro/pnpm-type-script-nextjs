@@ -20,6 +20,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url, key });
   } catch (error) {
+    console.log("error",error)
     return NextResponse.json(
       { error: 'プリサイン付きURLの生成に失敗しました' },
       { status: 500 }

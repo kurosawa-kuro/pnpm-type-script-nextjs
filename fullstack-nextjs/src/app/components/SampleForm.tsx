@@ -1,10 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function SampleForm() {
-  const router = useRouter();
   const [data, setData] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,6 +46,7 @@ export default function SampleForm() {
 
       setData('');
       setFile(null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).refreshSamples?.();
     } catch (error) {
       console.error(error);
