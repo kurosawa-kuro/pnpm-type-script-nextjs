@@ -21,4 +21,5 @@ aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --
 
 検証環境整備してPDCAサイクルを高速化
 
+
 その為にScript Makefileをフル活用
