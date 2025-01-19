@@ -7,7 +7,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # README.md に改行を追加
 echo "" >> "$PROJECT_ROOT/README.md"
 
-# 成功のコミット
+# 成功のコミット with timestamp
 git add .
-git commit -m "success commit"
+git commit -m "success commit $(date)"
 git push
