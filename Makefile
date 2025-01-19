@@ -42,7 +42,7 @@ cloudwatch-log:
 # Git tag with timestamp new
 tag-success:
 	$(eval TIMESTAMP := $(shell date '+%Y%m%d_%H%M%S'))
-	git tag -a "release_$(TIMESTAMP)" -m "Release deployed at $(TIMESTAMP)"
+	git tag -a "release_$(TIMESTAMP)" -m "success at $(TIMESTAMP)"
 	git push origin "release_$(TIMESTAMP)"
 	@echo "Created and pushed tag: release_$(TIMESTAMP)"
 
