@@ -52,8 +52,5 @@ cloudwatch-log:
 
 # Git Success Commit with timestamp
 commit-success:
-	$(eval TIMESTAMP := $(shell date '+%Y%m%d_%H%M%S'))
-	git add .
-	git commit -m "Success at $(TIMESTAMP)"
-	git push origin HEAD
-	@echo "Created and pushed commit with timestamp: $(TIMESTAMP)"
+	chmod +x  ./infrastructure/script/commit_success.sh
+	 ./infrastructure/script/commit_success.sh
