@@ -37,3 +37,15 @@ docker-local:
 # CloudWatchのログを直接確認
 cloudwatch-log:
 	aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --follow
+
+
+# Git tag with timestamp
+tag-success:
+	$(eval TIMESTAMP := $(shell date '+%Y%m%d_%H%M%S'))
+	git tag -a "release_$(TIMESTAMP)" -m "Release deployed at $(TIMESTAMP)"
+	git push origin "release_$(TIMESTAMP)"
+	@echo "Created and pushed tag: release_$(TIMESTAMP)"
+
+# Git tag index
+tag-index:
+	git tag -l
