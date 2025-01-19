@@ -1,5 +1,5 @@
-import UserList from './components/UserList';
-import UserForm from './components/UserForm';
+import SampleList from './components/SampleList';
+import SampleForm from './components/SampleForm';
 import SystemCheck from './components/SystemCheck';
 
 export default function Page() {
@@ -10,13 +10,13 @@ export default function Page() {
       <SystemCheck />
       
       <div className="mb-12">
-        <h2 className="text-xl font-semibold mb-4">新規ユーザー登録</h2>
-        <UserForm />
+        <h2 className="text-xl font-semibold mb-4">新規サンプル登録</h2>
+        <SampleForm />
       </div>
       
       <div>
-        <h2 className="text-xl font-semibold mb-4">ユーザー一覧</h2>
-        <UserList />
+        <h2 className="text-xl font-semibold mb-4">サンプル一覧</h2>
+        <SampleList />
       </div>
     </div>
   );
