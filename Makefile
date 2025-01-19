@@ -39,7 +39,7 @@ cloudwatch-log:
 	aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --follow
 
 
-# Git tag with timestamp
+# Git tag with timestamp new
 tag-success:
 	$(eval TIMESTAMP := $(shell date '+%Y%m%d_%H%M%S'))
 	git tag -a "release_$(TIMESTAMP)" -m "Release deployed at $(TIMESTAMP)"
