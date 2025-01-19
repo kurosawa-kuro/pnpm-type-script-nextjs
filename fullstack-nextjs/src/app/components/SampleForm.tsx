@@ -11,25 +11,30 @@ export default function SampleForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
 
     try {
       setLoading(true);
       
-      // Get presigned URL for S3 upload
-      const presignedRes = await fetch('/api/upload/presigned', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: file.name }),
-      });
-      const { url, key } = await presignedRes.json();
+      let image_path;
+      
+      if (file) {
+        // Get presigned URL for S3 upload
+        const presignedRes = await fetch('/api/upload/presigned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName: file.name }),
+        });
+        const { url, key } = await presignedRes.json();
 
-      // Upload file to S3
-      await fetch(url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
-      });
+        // Upload file to S3
+        await fetch(url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type },
+        });
+        
+        image_path = key;
+      }
 
       // Create sample
       const res = await fetch('/api/samples', {
@@ -37,7 +42,7 @@ export default function SampleForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           data,
-          image_path: key,
+          ...(image_path && { image_path }),
         }),
       });
 
@@ -72,14 +77,13 @@ export default function SampleForm() {
 
       <div className="mb-4">
         <label htmlFor="image" className="block mb-2">
-          画像
+          画像（オプション）
         </label>
         <input
           type="file"
           id="image"
           accept="image/*"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          required
           className="w-full"
         />
       </div>

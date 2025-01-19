@@ -13,16 +13,34 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const data = await request.json();
+    const body = await request.json();
+    
+    if (!body.data) {
+      return NextResponse.json(
+        { error: 'Data is required' },
+        { status: 400 }
+      );
+    }
+
     const sample = await prisma.sample.create({
       data: {
-        data: data.data,
-        ...(data.image_path && { image_path: data.image_path }),
+        data: body.data,
+        image_path: body.image_path ?? '',
       },
     });
+
     return NextResponse.json(sample);
   } catch (error) {
-    console.error('Error creating sample:', error);
-    return NextResponse.json({ error: 'Failed to create sample' }, { status: 500 });
+    if (error instanceof Error) {
+      console.error('Error creating sample:', error.message);
+      return NextResponse.json(
+        { error: 'Failed to create sample: ' + error.message },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { error: 'Failed to create sample' },
+      { status: 500 }
+    );
   }
 }
