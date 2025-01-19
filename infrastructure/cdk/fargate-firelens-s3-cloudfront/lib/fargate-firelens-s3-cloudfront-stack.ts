@@ -19,17 +19,17 @@ import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 import { CommonResourceStack } from "./common-resource-stack";
 
-// スタックの設定インターフェース
-interface StackConfig {
-  prefix: string;
-  vpcCidr: string;
-  containerConfig: {
-    cpu: number;
-    memoryLimitMiB: number;
-    firelensMemoryMiB: number;
-    appMemoryMiB: number;
-  };
-}
+// // スタックの設定インターフェース
+// interface StackConfig {
+//   prefix: string;
+//   vpcCidr: string;
+//   containerConfig: {
+//     cpu: number;
+//     memoryLimitMiB: number;
+//     firelensMemoryMiB: number;
+//     appMemoryMiB: number;
+//   };
+// }
 
 interface FargateFirelensS3CloudfrontStackProps extends StackProps {
   config: {
@@ -85,6 +85,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     );
 
     // 出力の設定
+    // ロードバランサー出力が漏れている
     new CfnOutput(this, 'CloudFrontDomainName', {
       value: distribution.distributionDomainName,
     });

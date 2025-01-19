@@ -138,8 +138,13 @@ export class CommonResourceStack extends Stack {
       }),
     });
 
+    firelensLogRouter.addPortMappings({
+      containerPort: 24224,
+      protocol: ecs.Protocol.TCP
+    });
+
     const appContainer = taskDefinition.addContainer(config.prefix + 'App', {
-      image: ecs.ContainerImage.fromAsset(path.join(__dirname, '../../../app')),
+      image: ecs.ContainerImage.fromRegistry('985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app'),
       memoryReservationMiB: config.containerConfig.appMemoryMiB,
       logging: ecs.LogDrivers.firelens({
         options: {
