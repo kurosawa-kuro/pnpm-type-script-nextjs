@@ -1,7 +1,6 @@
 import { Construct } from "constructs";
 import {
   aws_ecs as ecs,
-  aws_s3_assets as assets,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
   aws_ec2 as ec2,
@@ -9,25 +8,25 @@ import {
   aws_s3 as s3,
   Stack,
   StackProps,
-  CfnOutput,
   RemovalPolicy,
+  Duration,
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
-import * as path from "path";
-import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
-import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 
-interface StackConfig {
+interface ContainerConfig {
+  cpu: number;
+  memoryLimitMiB: number;
+  firelensMemoryMiB: number;
+  appMemoryMiB: number;
+  containerImage: string;
+}
+
+interface ResourceConfig {
   prefix: string;
   vpcCidr: string;
   appPort: number;
-  containerConfig: {
-    cpu: number;
-    memoryLimitMiB: number;
-    firelensMemoryMiB: number;
-    appMemoryMiB: number;
-  };
+  containerConfig: ContainerConfig;
 }
 
 interface CommonResourceProps extends StackProps {
@@ -44,24 +43,43 @@ export class CommonResourceStack extends Stack {
       vpcName: resourceName + 'Vpc',
       ipAddresses: ec2.IpAddresses.cidr(config.vpcCidr),
       maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [{
-        name: 'Public',
-        subnetType: ec2.SubnetType.PUBLIC,
-        mapPublicIpOnLaunch: true,
-        cidrMask: 24
-      }],
+      natGateways: 1,
+      subnetConfiguration: [
+        {
+          name: 'Public',
+          subnetType: ec2.SubnetType.PUBLIC,
+          mapPublicIpOnLaunch: true,
+          cidrMask: 24
+        },
+        {
+          name: 'Private',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+          cidrMask: 24
+        }
+      ],
+      natGatewayProvider: ec2.NatProvider.instance({
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.NANO)
+      })
     });
 
     const securityGroup = new ec2.SecurityGroup(this, resourceName + 'SecurityGroup', {
       vpc,
       securityGroupName: resourceName + 'SecurityGroup',
-      description: 'Security group for Fargate containers'
+      description: 'Security group for Fargate containers',
+      allowAllOutbound: true,
     });
 
-    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80));
-    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443));
-    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(config.appPort), 'Allow application traffic');
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(config.appPort),
+      'Allow inbound from ALB'
+    );
+
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80),
+      'Allow health check'
+    );
 
     return { vpc, securityGroup };
   }
@@ -89,11 +107,22 @@ export class CommonResourceStack extends Stack {
     return { logBucket, imageBucket };
   }
 
-  public createIAMResources(prefix: string): { taskRole: iam.Role, executionRole: iam.Role } {
+  public createIAMResources(prefix: string, logBucket: s3.Bucket): { taskRole: iam.Role, executionRole: iam.Role } {
     const taskRole = new iam.Role(this, prefix + 'TaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       roleName: prefix + 'TaskRole',
     });
+
+    taskRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'));
+    
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['s3:*'],
+      resources: [
+        logBucket.bucketArn,
+        `${logBucket.bucketArn}/*`
+      ],
+    }));
 
     const executionRole = new iam.Role(this, prefix + 'ExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
@@ -107,7 +136,7 @@ export class CommonResourceStack extends Stack {
   }
 
   public createECSResources(
-    config: StackConfig,
+    config: ResourceConfig,
     vpc: ec2.Vpc,
     securityGroup: ec2.SecurityGroup,
     taskRole: iam.Role,
@@ -144,7 +173,7 @@ export class CommonResourceStack extends Stack {
     });
 
     const appContainer = taskDefinition.addContainer(config.prefix + 'App', {
-      image: ecs.ContainerImage.fromRegistry('985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app'),
+      image: ecs.ContainerImage.fromRegistry(config.containerConfig.containerImage),
       memoryReservationMiB: config.containerConfig.appMemoryMiB,
       logging: ecs.LogDrivers.firelens({
         options: {
@@ -167,9 +196,27 @@ export class CommonResourceStack extends Stack {
       taskDefinition,
       desiredCount: 1,
       publicLoadBalancer: true,
-      assignPublicIp: true,
+      assignPublicIp: false,
       securityGroups: [securityGroup],
+      taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
+
+    service.targetGroup.configureHealthCheck({
+      path: '/',
+      port: 'traffic-port',
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+      timeout: Duration.seconds(10),
+      interval: Duration.seconds(15),
+    });
+
+    service.loadBalancer.addSecurityGroup(
+      new ec2.SecurityGroup(this, config.prefix + 'ALBSecurityGroup', {
+        vpc,
+        allowAllOutbound: true,
+        description: 'Security group for ALB'
+      })
+    );
 
     return { cluster, taskDefinition, service };
   }
