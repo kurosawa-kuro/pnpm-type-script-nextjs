@@ -1,13 +1,13 @@
 import UserList from './components/UserList';
 import UserForm from './components/UserForm';
-import SystemHealthCheck from './components/SystemHealthCheck';
+import SystemCheck from './components/SystemCheck';
 
 export default function Page() {
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-8">ユーザー管理システム</h1>
+      <h1 className="text-2xl font-bold mb-8">クラウドネィティブ システム</h1>
       
-      <SystemHealthCheck />
+      <SystemCheck />
       
       <div className="mb-12">
         <h2 className="text-xl font-semibold mb-4">新規ユーザー登録</h2>

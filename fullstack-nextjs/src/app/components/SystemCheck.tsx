@@ -90,7 +90,7 @@ const METRICS_CONFIG = {
   },
 } as const;
 
-export default function SystemHealthCheck() {
+export default function SystemCheck() {
   // 状態管理
   const [metrics, setMetrics] = useState<{
     health: HealthStatus | null;
