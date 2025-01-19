@@ -13,6 +13,7 @@ import {
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
+import { ApplicationProtocol } from "aws-cdk-lib/aws-elasticloadbalancingv2";
 
 interface ContainerConfig {
   cpu: number;
@@ -38,7 +39,7 @@ export class CommonResourceStack extends Stack {
     super(scope, id, props);
   }
 
-  public createNetworkResources(resourceName: string, config: { vpcCidr: string, appPort: number }): { vpc: ec2.Vpc, securityGroup: ec2.SecurityGroup } {
+  public createNetworkResources(resourceName: string, config: { vpcCidr: string, appPort: number }): { vpc: ec2.Vpc, securityGroup: ec2.SecurityGroup, albSecurityGroup: ec2.SecurityGroup } {
     const vpc = new ec2.Vpc(this, resourceName + 'Vpc', {
       vpcName: resourceName + 'Vpc',
       ipAddresses: ec2.IpAddresses.cidr(config.vpcCidr),
@@ -57,9 +58,7 @@ export class CommonResourceStack extends Stack {
           cidrMask: 24
         }
       ],
-      natGatewayProvider: ec2.NatProvider.instance({
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.NANO)
-      })
+      natGatewayProvider: ec2.NatProvider.gateway()
     });
 
     const securityGroup = new ec2.SecurityGroup(this, resourceName + 'SecurityGroup', {
@@ -69,19 +68,26 @@ export class CommonResourceStack extends Stack {
       allowAllOutbound: true,
     });
 
+    const albSecurityGroup = new ec2.SecurityGroup(this, resourceName + 'ALBSecurityGroup', {
+      vpc,
+      securityGroupName: resourceName + 'ALBSecurityGroup',
+      description: 'Security group for ALB',
+      allowAllOutbound: true,
+    });
+
     securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
+      albSecurityGroup,
       ec2.Port.tcp(config.appPort),
       'Allow inbound from ALB'
     );
 
-    securityGroup.addIngressRule(
+    albSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(80),
-      'Allow health check'
+      'Allow HTTP from anywhere'
     );
 
-    return { vpc, securityGroup };
+    return { vpc, securityGroup, albSecurityGroup };
   }
 
   public createStorageResources(resourceName: string): { logBucket: s3.Bucket, imageBucket: s3.Bucket } {
@@ -139,6 +145,7 @@ export class CommonResourceStack extends Stack {
     config: ResourceConfig,
     vpc: ec2.Vpc,
     securityGroup: ec2.SecurityGroup,
+    albSecurityGroup: ec2.SecurityGroup,
     taskRole: iam.Role,
     executionRole: iam.Role,
     logBucket: s3.Bucket
@@ -175,6 +182,7 @@ export class CommonResourceStack extends Stack {
     const appContainer = taskDefinition.addContainer(config.prefix + 'App', {
       image: ecs.ContainerImage.fromRegistry(config.containerConfig.containerImage),
       memoryReservationMiB: config.containerConfig.appMemoryMiB,
+      essential: true,
       logging: ecs.LogDrivers.firelens({
         options: {
           Name: 's3',
@@ -197,26 +205,21 @@ export class CommonResourceStack extends Stack {
       desiredCount: 1,
       publicLoadBalancer: true,
       assignPublicIp: false,
-      securityGroups: [securityGroup],
       taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      listenerPort: 80,
+      targetProtocol: ApplicationProtocol.HTTP,
+      openListener: true,
+      securityGroups: [securityGroup, albSecurityGroup]
     });
 
     service.targetGroup.configureHealthCheck({
       path: '/',
-      port: 'traffic-port',
+      port: String(config.appPort),
       healthyThresholdCount: 2,
       unhealthyThresholdCount: 3,
       timeout: Duration.seconds(10),
       interval: Duration.seconds(15),
     });
-
-    service.loadBalancer.addSecurityGroup(
-      new ec2.SecurityGroup(this, config.prefix + 'ALBSecurityGroup', {
-        vpc,
-        allowAllOutbound: true,
-        description: 'Security group for ALB'
-      })
-    );
 
     return { cluster, taskDefinition, service };
   }

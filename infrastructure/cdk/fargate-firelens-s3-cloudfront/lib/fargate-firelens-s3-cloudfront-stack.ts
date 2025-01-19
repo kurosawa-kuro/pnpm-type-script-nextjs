@@ -29,7 +29,7 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     const resourceName = props.config.prefix;
 
     // ネットワークリソースの作成
-    const { vpc, securityGroup } = props.commonResources.createNetworkResources(
+    const { vpc, securityGroup, albSecurityGroup } = props.commonResources.createNetworkResources(
       resourceName,
       {
         vpcCidr: props.config.vpcCidr,
@@ -44,10 +44,11 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
     const { taskRole, executionRole } = props.commonResources.createIAMResources(resourceName, logBucket);
 
     // ECSリソースの作成
-    const {  service } = props.commonResources.createECSResources(
+    const { service } = props.commonResources.createECSResources(
       props.config,
       vpc,
       securityGroup,
+      albSecurityGroup,
       taskRole,
       executionRole,
       logBucket

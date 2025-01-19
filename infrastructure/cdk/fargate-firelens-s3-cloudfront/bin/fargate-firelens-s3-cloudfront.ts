@@ -3,7 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { FargateFirelensS3CloudfrontStack } from '../lib/fargate-firelens-s3-cloudfront-stack';
 import { CommonResourceStack } from '../lib/common-resource-stack';
 
-const VERSION = '8';
+const VERSION = '9';
 
 const CONFIG = {
   version: VERSION,
