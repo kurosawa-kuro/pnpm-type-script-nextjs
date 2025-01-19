@@ -49,3 +49,11 @@ tag-success:
 # Git tag index
 tag-index:
 	git tag -l
+
+# Git Success Commit with timestamp
+tag-success-commit:
+	$(eval TIMESTAMP := $(shell date '+%Y%m%d_%H%M%S'))
+	git add .
+	git commit -m "Success at $(TIMESTAMP)"
+	git push origin HEAD
+	@echo "Created and pushed commit with timestamp: $(TIMESTAMP)"
