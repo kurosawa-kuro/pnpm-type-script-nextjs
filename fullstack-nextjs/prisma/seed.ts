@@ -30,8 +30,8 @@ async function main() {
     console.log("Added sample data");
 
     console.log("Seed process completed");
-  } catch (error) {
-    if (error.code === 'P2010') {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2010') {
       console.error(`Table not found error. Please ensure all tables exist and run 'prisma migrate dev' first.`);
     } else {
       console.error('Unexpected error during seed:', error);
