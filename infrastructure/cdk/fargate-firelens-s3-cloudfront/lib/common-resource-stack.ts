@@ -8,12 +8,9 @@ import {
   aws_s3 as s3,
   Stack,
   StackProps,
-  RemovalPolicy,
-  Duration,
+  RemovalPolicy
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
-import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
-import { ApplicationProtocol } from "aws-cdk-lib/aws-elasticloadbalancingv2";
 
 interface ContainerConfig {
   cpu: number;
@@ -28,10 +25,6 @@ interface ResourceConfig {
   vpcCidr: string;
   appPort: number;
   containerConfig: ContainerConfig;
-}
-
-interface CommonResourceProps extends StackProps {
-  prefix: string;
 }
 
 export class CommonResourceStack extends Stack {

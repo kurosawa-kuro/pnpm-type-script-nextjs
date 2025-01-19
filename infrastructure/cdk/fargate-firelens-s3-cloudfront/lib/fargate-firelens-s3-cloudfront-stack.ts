@@ -86,11 +86,6 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
       description: 'CloudFront Distribution Domain Name'
     });
 
-    new CfnOutput(this, 'FargatePublicIP', {
-      value: resources.service.connections.securityGroups[0].securityGroupId,
-      description: 'Fargate Security Group ID (Use this to find the ENI and its public IP)'
-    });
-
     new CfnOutput(this, 'S3BucketName', {
       value: resources.logBucket.bucketName,
       description: 'S3 Bucket Name'
