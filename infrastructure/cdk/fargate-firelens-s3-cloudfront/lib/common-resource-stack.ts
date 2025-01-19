@@ -39,26 +39,20 @@ export class CommonResourceStack extends Stack {
     super(scope, id, props);
   }
 
-  public createNetworkResources(resourceName: string, config: { vpcCidr: string, appPort: number }): { vpc: ec2.Vpc, securityGroup: ec2.SecurityGroup, albSecurityGroup: ec2.SecurityGroup } {
+  public createNetworkResources(resourceName: string, config: { vpcCidr: string, appPort: number }): { vpc: ec2.Vpc, securityGroup: ec2.SecurityGroup } {
     const vpc = new ec2.Vpc(this, resourceName + 'Vpc', {
       vpcName: resourceName + 'Vpc',
       ipAddresses: ec2.IpAddresses.cidr(config.vpcCidr),
       maxAzs: 2,
-      natGateways: 1,
+      natGateways: 0,
       subnetConfiguration: [
         {
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
           mapPublicIpOnLaunch: true,
           cidrMask: 24
-        },
-        {
-          name: 'Private',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-          cidrMask: 24
         }
-      ],
-      natGatewayProvider: ec2.NatProvider.gateway()
+      ]
     });
 
     const securityGroup = new ec2.SecurityGroup(this, resourceName + 'SecurityGroup', {
@@ -68,26 +62,13 @@ export class CommonResourceStack extends Stack {
       allowAllOutbound: true,
     });
 
-    const albSecurityGroup = new ec2.SecurityGroup(this, resourceName + 'ALBSecurityGroup', {
-      vpc,
-      securityGroupName: resourceName + 'ALBSecurityGroup',
-      description: 'Security group for ALB',
-      allowAllOutbound: true,
-    });
-
     securityGroup.addIngressRule(
-      albSecurityGroup,
-      ec2.Port.tcp(config.appPort),
-      'Allow inbound from ALB'
-    );
-
-    albSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      'Allow HTTP from anywhere'
+      ec2.Port.tcp(config.appPort),
+      'Allow inbound HTTP'
     );
 
-    return { vpc, securityGroup, albSecurityGroup };
+    return { vpc, securityGroup };
   }
 
   public createStorageResources(resourceName: string): { logBucket: s3.Bucket, imageBucket: s3.Bucket } {
@@ -145,11 +126,10 @@ export class CommonResourceStack extends Stack {
     config: ResourceConfig,
     vpc: ec2.Vpc,
     securityGroup: ec2.SecurityGroup,
-    albSecurityGroup: ec2.SecurityGroup,
     taskRole: iam.Role,
     executionRole: iam.Role,
     logBucket: s3.Bucket
-  ): { cluster: ecs.Cluster, taskDefinition: ecs.FargateTaskDefinition, service: ecs_patterns.ApplicationLoadBalancedFargateService } {
+  ): { cluster: ecs.Cluster, taskDefinition: ecs.FargateTaskDefinition, service: ecs.FargateService } {
     const cluster = new ecs.Cluster(this, config.prefix + 'Cluster', {
       vpc,
       clusterName: config.prefix + 'Cluster',
@@ -199,26 +179,13 @@ export class CommonResourceStack extends Stack {
       protocol: ecs.Protocol.TCP,
     });
 
-    const service = new ecs_patterns.ApplicationLoadBalancedFargateService(this, config.prefix + 'Service', {
+    const service = new ecs.FargateService(this, config.prefix + 'Service', {
       cluster,
       taskDefinition,
       desiredCount: 1,
-      publicLoadBalancer: true,
-      assignPublicIp: false,
-      taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      listenerPort: 80,
-      targetProtocol: ApplicationProtocol.HTTP,
-      openListener: true,
-      securityGroups: [securityGroup, albSecurityGroup]
-    });
-
-    service.targetGroup.configureHealthCheck({
-      path: '/',
-      port: String(config.appPort),
-      healthyThresholdCount: 2,
-      unhealthyThresholdCount: 3,
-      timeout: Duration.seconds(10),
-      interval: Duration.seconds(15),
+      assignPublicIp: true,
+      securityGroups: [securityGroup],
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }
     });
 
     return { cluster, taskDefinition, service };
@@ -227,11 +194,11 @@ export class CommonResourceStack extends Stack {
   public createCloudfrontResources(
     prefix: string,
     imageBucket: s3.Bucket,
-    loadBalancer: ecs_patterns.ApplicationLoadBalancedFargateService
+    service: ecs.FargateService
   ): { distribution: cloudfront.Distribution } {
     const distribution = new cloudfront.Distribution(this, prefix + 'Distribution', {
       defaultBehavior: {
-        origin: new origins.LoadBalancerV2Origin(loadBalancer.loadBalancer, {
+        origin: new origins.HttpOrigin(`${service.cluster.clusterName}.${this.region}.amazonaws.com`, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
         }),
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,

@@ -26,10 +26,18 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
   constructor(scope: Construct, id: string, props: FargateFirelensS3CloudfrontStackProps) {
     super(scope, id, props);
 
+    // リソースの作成
+    const resources = this.createResources(props);
+    
+    // 出力の設定
+    this.configureOutputs(resources);
+  }
+
+  private createResources(props: FargateFirelensS3CloudfrontStackProps) {
     const resourceName = props.config.prefix;
 
     // ネットワークリソースの作成
-    const { vpc, securityGroup, albSecurityGroup } = props.commonResources.createNetworkResources(
+    const { vpc, securityGroup } = props.commonResources.createNetworkResources(
       resourceName,
       {
         vpcCidr: props.config.vpcCidr,
@@ -48,7 +56,6 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
       props.config,
       vpc,
       securityGroup,
-      albSecurityGroup,
       taskRole,
       executionRole,
       logBucket
@@ -61,15 +68,32 @@ export class FargateFirelensS3CloudfrontStack extends Stack {
       service
     );
 
-    // 出力の設定
-    new CfnOutput(this, 'LoadBalancerDNS', {
-      value: service.loadBalancer.loadBalancerDnsName,
-      description: 'Application Load Balancer DNS Name'
+    return { service, distribution, logBucket };
+  }
+
+  private configureOutputs(resources: { 
+    service: any, 
+    distribution: any, 
+    logBucket: any 
+  }) {
+    new CfnOutput(this, 'ServiceDNS', {
+      value: resources.service.cluster.clusterName,
+      description: 'ECS Service Cluster Name'
     });
 
     new CfnOutput(this, 'CloudFrontDomainName', {
-      value: distribution.distributionDomainName,
+      value: resources.distribution.distributionDomainName,
       description: 'CloudFront Distribution Domain Name'
+    });
+
+    new CfnOutput(this, 'FargatePublicIP', {
+      value: resources.service.connections.securityGroups[0].securityGroupId,
+      description: 'Fargate Security Group ID (Use this to find the ENI and its public IP)'
+    });
+
+    new CfnOutput(this, 'S3BucketName', {
+      value: resources.logBucket.bucketName,
+      description: 'S3 Bucket Name'
     });
   }
 }
