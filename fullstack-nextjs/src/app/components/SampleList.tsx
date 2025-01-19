@@ -14,17 +14,19 @@ interface Sample {
 export default function SampleList() {
   const [samples, setSamples] = useState<Sample[]>([]);
 
-  useEffect(() => {
-    const fetchSamples = async () => {
-      const response = await fetch('/api/samples');
-      const data = await response.json();
-      console.log('Samples data:', data);
-      setSamples(data);
-    };
+  const fetchSamples = async () => {
+    const response = await fetch('/api/samples');
+    const data = await response.json();
+    setSamples(data);
+  };
 
+  useEffect(() => {
     fetchSamples();
   }, []);
 
+  // SampleFormで使用するために関数をexport
+  (window as any).refreshSamples = fetchSamples;
+    
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {samples.map((sample) => (

@@ -15,8 +15,7 @@ export default function SampleForm() {
     try {
       setLoading(true);
       
-      let image_path;
-      
+      let key;
       if (file) {
         // Get presigned URL for S3 upload
         const presignedRes = await fetch('/api/upload/presigned', {
@@ -24,7 +23,8 @@ export default function SampleForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileName: file.name }),
         });
-        const { url, key } = await presignedRes.json();
+        const { url, key: uploadKey } = await presignedRes.json();
+        key = uploadKey;
 
         // Upload file to S3
         await fetch(url, {
@@ -32,8 +32,6 @@ export default function SampleForm() {
           body: file,
           headers: { 'Content-Type': file.type },
         });
-        
-        image_path = key;
       }
 
       // Create sample
@@ -42,7 +40,7 @@ export default function SampleForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           data,
-          ...(image_path && { image_path }),
+          ...(key && { image_path: key }),
         }),
       });
 
@@ -50,7 +48,7 @@ export default function SampleForm() {
 
       setData('');
       setFile(null);
-      router.refresh();
+      (window as any).refreshSamples?.();
     } catch (error) {
       console.error(error);
       alert('エラーが発生しました');
@@ -70,14 +68,13 @@ export default function SampleForm() {
           id="data"
           value={data}
           onChange={(e) => setData(e.target.value)}
-          required
           className="w-full px-3 py-2 border rounded text-black"
         />
       </div>
 
       <div className="mb-4">
         <label htmlFor="image" className="block mb-2">
-          画像（オプション）
+          画像（任意）
         </label>
         <input
           type="file"
