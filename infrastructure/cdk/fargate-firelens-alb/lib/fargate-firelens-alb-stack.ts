@@ -10,6 +10,7 @@ import {
   Stack,
   StackProps,
   Duration,
+  CfnOutput,
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
 import { Effect } from "aws-cdk-lib/aws-iam";
@@ -72,6 +73,13 @@ export class FargateFirelensAlbStack extends Stack {
       vpc: this.vpc,
       securityGroup: this.albSecurityGroup,
       internetFacing: true,
+    });
+
+    // ALBのURLを出力するためのCfnOutputを追加
+    new CfnOutput(this, 'LoadBalancerDNS', {
+      value: alb.loadBalancerDnsName,
+      description: 'Application Load Balancer DNS Name',
+      exportName: 'LoadBalancerDNS',
     });
 
     const listener = alb.addListener("listener", {
