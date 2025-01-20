@@ -25,6 +25,12 @@ aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --
 その為にScript Makefileをフル活用
 
 
+# 1. 現状のスタック情報確認
+cdk deploy --require-approval never
+
+cdk diff && cdk destroy --force && cdk deploy --require-approval never
+
+
 
 
 

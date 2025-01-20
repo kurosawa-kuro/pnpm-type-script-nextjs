@@ -46,16 +46,16 @@ export class FargateFirelensAlbStack extends Stack {
     super(scope, id, props);
 
     // ロギングインフラ
-    this.logBucket = new s3.Bucket(this, "logBucket", {
+    this.logBucket = new s3.Bucket(this, "LogBucket", {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
 
-    const asset = new assets.Asset(this, "asset", {
+    const asset = new assets.Asset(this, "FluentBitConfigAsset", {
       path: CONFIG.FLUENT_BIT.CONFIG_PATH,
     });
 
-    new firehose.DeliveryStream(this, "logDeliveryStream", {
+    new firehose.DeliveryStream(this, "LogDeliveryStream", {
       deliveryStreamName: CONFIG.FIREHOSE.DELIVERY_STREAM_NAME,
       destination: new destinations.S3Bucket(this.logBucket, {
         bufferingInterval: Duration.seconds(60)
@@ -63,9 +63,9 @@ export class FargateFirelensAlbStack extends Stack {
     });
 
     // ネットワークインフラ
-    this.vpc = new ec2.Vpc(this, "Vpc", { maxAzs: 2, natGateways: 0 });
+    this.vpc = new ec2.Vpc(this, "MainVpc", { maxAzs: 2, natGateways: 0 });
 
-    this.albSecurityGroup = new ec2.SecurityGroup(this, "albSecurityGroup", {
+    this.albSecurityGroup = new ec2.SecurityGroup(this, "AlbSecurityGroup", {
       vpc: this.vpc,
     });
     this.albSecurityGroup.addIngressRule(
@@ -73,7 +73,7 @@ export class FargateFirelensAlbStack extends Stack {
       ec2.Port.tcp(80)
     );
 
-    this.fargateSecurityGroup = new ec2.SecurityGroup(this, "fargateSecurityGroup", {
+    this.fargateSecurityGroup = new ec2.SecurityGroup(this, "FargateSecurityGroup", {
       vpc: this.vpc,
       description: "Security group for Fargate service",
     });
@@ -85,17 +85,17 @@ export class FargateFirelensAlbStack extends Stack {
     );
 
     // ALB設定
-    const alb = new elb.ApplicationLoadBalancer(this, "alb", {
+    const alb = new elb.ApplicationLoadBalancer(this, "ApplicationLoadBalancer", {
       vpc: this.vpc,
       securityGroup: this.albSecurityGroup,
       internetFacing: true,
     });
 
     // ALBのURLを出力するためのCfnOutputを修正
-    new CfnOutput(this, 'LoadBalancerDNS', {
+    new CfnOutput(this, 'ApplicationLoadBalancerDns', {
       value: `http://${alb.loadBalancerDnsName}/`,
       description: 'Application Load Balancer URL',
-      exportName: 'LoadBalancerURL',
+      exportName: 'LoadBalancerUrl',
     });
 
     const listener = alb.addListener("listener", {
@@ -103,7 +103,7 @@ export class FargateFirelensAlbStack extends Stack {
       port: 80,
     });
 
-    this.targetGroup = new elb.ApplicationTargetGroup(this, "targetGroup", {
+    this.targetGroup = new elb.ApplicationTargetGroup(this, "ApplicationTargetGroup", {
       vpc: this.vpc,
       port: 3000,
       protocol: elb.ApplicationProtocol.HTTP,
@@ -119,9 +119,9 @@ export class FargateFirelensAlbStack extends Stack {
     });
 
     // ECSインフラ
-    const cluster = new ecs.Cluster(this, "cluster", { vpc: this.vpc });
+    const cluster = new ecs.Cluster(this, "EcsCluster", { vpc: this.vpc });
     
-    this.taskRole = new iam.Role(this, "taskRole", {
+    this.taskRole = new iam.Role(this, "EcsTaskRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
     });
 
@@ -169,7 +169,7 @@ export class FargateFirelensAlbStack extends Stack {
 
     const taskDefinition = this.createTaskDefinition(asset);
     
-    const fargateService = new ecs.FargateService(this, "fargateService", {
+    const fargateService = new ecs.FargateService(this, "FargateService", {
       cluster,
       taskDefinition,
       desiredCount: 1,
@@ -181,11 +181,11 @@ export class FargateFirelensAlbStack extends Stack {
   }
 
   private createTaskDefinition(asset: assets.Asset): ecs.FargateTaskDefinition {
-    const taskDefinition = new ecs.FargateTaskDefinition(this, "taskDefinition", {
+    const taskDefinition = new ecs.FargateTaskDefinition(this, "FargateTaskDefinition", {
       cpu: 512,
       memoryLimitMiB: 1024,
       taskRole: this.taskRole,
-      executionRole: new iam.Role(this, 'TaskExecutionRole', {
+      executionRole: new iam.Role(this, 'EcsTaskExecutionRole', {
         assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
         managedPolicies: [
           iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
