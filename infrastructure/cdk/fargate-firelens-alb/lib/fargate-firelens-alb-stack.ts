@@ -18,6 +18,22 @@ import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 
+// Configuration Constants
+const CONFIG = {
+  FLUENT_BIT: {
+    CONFIG_PATH: path.join(__dirname, "extra.conf"),
+    IMAGE: "public.ecr.aws/aws-observability/aws-for-fluent-bit:init-latest"
+  },
+  FIREHOSE: {
+    DELIVERY_STREAM_NAME: "log-delivery-stream01"
+  },
+  ECR: {
+    ACCOUNT_ID: "985539793438",
+    REGION: "ap-northeast-1",
+    APP_REPOSITORY: "nextjs-app"
+  }
+};
+
 export class FargateFirelensAlbStack extends Stack {
   private readonly vpc: ec2.Vpc;
   private readonly logBucket: s3.Bucket;
@@ -36,11 +52,11 @@ export class FargateFirelensAlbStack extends Stack {
     });
 
     const asset = new assets.Asset(this, "asset", {
-      path: path.join(__dirname, "extra.conf"),
+      path: CONFIG.FLUENT_BIT.CONFIG_PATH,
     });
 
     new firehose.DeliveryStream(this, "logDeliveryStream", {
-      deliveryStreamName: "log-delivery-stream01",
+      deliveryStreamName: CONFIG.FIREHOSE.DELIVERY_STREAM_NAME,
       destination: new destinations.S3Bucket(this.logBucket, {
         bufferingInterval: Duration.seconds(60)
       })
@@ -75,11 +91,11 @@ export class FargateFirelensAlbStack extends Stack {
       internetFacing: true,
     });
 
-    // ALBのURLを出力するためのCfnOutputを追加
+    // ALBのURLを出力するためのCfnOutputを修正
     new CfnOutput(this, 'LoadBalancerDNS', {
-      value: alb.loadBalancerDnsName,
-      description: 'Application Load Balancer DNS Name',
-      exportName: 'LoadBalancerDNS',
+      value: `http://${alb.loadBalancerDnsName}/`,
+      description: 'Application Load Balancer URL',
+      exportName: 'LoadBalancerURL',
     });
 
     const listener = alb.addListener("listener", {
@@ -146,7 +162,7 @@ export class FargateFirelensAlbStack extends Stack {
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
         ],
-        resources: [`arn:aws:ecr:ap-northeast-1:985539793438:repository/nextjs-app`],
+        resources: [`arn:aws:ecr:${CONFIG.ECR.REGION}:${CONFIG.ECR.ACCOUNT_ID}:repository/${CONFIG.ECR.APP_REPOSITORY}`],
         effect: Effect.ALLOW,
       })
     );
@@ -184,9 +200,7 @@ export class FargateFirelensAlbStack extends Stack {
       environment: {
         aws_fluent_bit_init_s3_1: `arn:aws:s3:::${asset.s3BucketName}/${asset.s3ObjectKey}`,
       },
-      image: ecs.ContainerImage.fromRegistry(
-        "public.ecr.aws/aws-observability/aws-for-fluent-bit:init-latest"
-      ),
+      image: ecs.ContainerImage.fromRegistry(CONFIG.FLUENT_BIT.IMAGE),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "log-router",
       }),
@@ -194,13 +208,13 @@ export class FargateFirelensAlbStack extends Stack {
 
     taskDefinition.defaultContainer = taskDefinition.addContainer("nextjsContainer", {
       image: ecs.ContainerImage.fromRegistry(
-        "985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app"
+        `${CONFIG.ECR.ACCOUNT_ID}.dkr.ecr.${CONFIG.ECR.REGION}.amazonaws.com/${CONFIG.ECR.APP_REPOSITORY}`
       ),
       logging: ecs.LogDrivers.firelens({
         options: {
           Name: 'firehose',
-          region: 'ap-northeast-1',
-          delivery_stream: 'log-delivery-stream01'
+          region: CONFIG.ECR.REGION,
+          delivery_stream: CONFIG.FIREHOSE.DELIVERY_STREAM_NAME
         }
       }),
       portMappings: [{ containerPort: 3000 }],
