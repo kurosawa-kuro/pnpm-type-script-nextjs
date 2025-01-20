@@ -16,80 +16,46 @@ import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 
-export class CdkEcsFirelensStack extends Stack {
+// リソース作成を担当するクラス
+class ResourceFactory {
   private readonly prefix: string;
-  private readonly vpc: ec2.Vpc;
-  private readonly asset: assets.Asset;
-  private readonly logBucket: s3.Bucket;
-  private readonly albSecurityGroup: ec2.SecurityGroup;
-  private readonly fargateSecurityGroup: ec2.SecurityGroup;
-  private readonly targetGroup: elb.ApplicationTargetGroup;
+  private readonly scope: Construct;
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
-    super(scope, id, props);
-    
-    // 基本設定の初期化
-    this.prefix = this.initializePrefix();
-    
-    // インフラストラクチャの初期化
-    this.asset = this.createAsset();
-    this.logBucket = this.createLogBucket();
-    this.createFirehoseDeliveryStream();
-    
-    // ネットワークの初期化
-    this.vpc = this.createVpc();
-    this.albSecurityGroup = this.createAlbSecurityGroup();
-    this.fargateSecurityGroup = this.createFargateSecurityGroup();
-    
-    // ALBの初期化
-    const alb = this.createAlb();
-    const listener = this.createListener(alb);
-    this.targetGroup = this.createTargetGroup();
-    this.attachTargetGroupToListener(listener);
-    
-    // ECSの初期化
-    const cluster = this.createEcsCluster();
-    const taskRole = this.createTaskRole();
-    const taskDefinition = this.createTaskDefinition(taskRole);
-    this.configureTaskDefinition(taskDefinition);
-    this.createFargateService(cluster, taskDefinition);
+  constructor(scope: Construct, prefix: string) {
+    this.scope = scope;
+    this.prefix = prefix;
   }
 
-  private initializePrefix(): string {
-    const ver = '01';
-    return 'Cdkfargate' + ver;
-  }
-
-  private createAsset(): assets.Asset {
-    return new assets.Asset(this, this.prefix + "Asset", {
+  public createAsset(): assets.Asset {
+    return new assets.Asset(this.scope, this.prefix + "Asset", {
       path: path.join(__dirname, "extra.conf"),
     });
   }
 
-  private createLogBucket(): s3.Bucket {
-    return new s3.Bucket(this, this.prefix + "LogBucket", {
+  public createLogBucket(): s3.Bucket {
+    return new s3.Bucket(this.scope, this.prefix + "LogBucket", {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
   }
 
-  private createFirehoseDeliveryStream(): void {
-    new firehose.DeliveryStream(this, this.prefix + "LogDeliveryStream", {
+  public createFirehoseDeliveryStream(logBucket: s3.Bucket): void {
+    new firehose.DeliveryStream(this.scope, this.prefix + "LogDeliveryStream", {
       deliveryStreamName: this.prefix + "log-delivery-stream",
-      destinations: [new destinations.S3Bucket(this.logBucket)],
+      destinations: [new destinations.S3Bucket(logBucket)],
     });
   }
 
-  private createVpc(): ec2.Vpc {
-    return new ec2.Vpc(this, this.prefix + "Vpc", { 
+  public createVpc(): ec2.Vpc {
+    return new ec2.Vpc(this.scope, this.prefix + "Vpc", { 
       maxAzs: 2, 
       natGateways: 0 
     });
   }
 
-  private createAlbSecurityGroup(): ec2.SecurityGroup {
-    const sg = new ec2.SecurityGroup(this, this.prefix + "AlbSecurityGroup", {
-      vpc: this.vpc,
+  public createAlbSecurityGroup(vpc: ec2.Vpc): ec2.SecurityGroup {
+    const sg = new ec2.SecurityGroup(this.scope, this.prefix + "AlbSecurityGroup", {
+      vpc: vpc,
     });
     
     sg.addIngressRule(
@@ -100,37 +66,37 @@ export class CdkEcsFirelensStack extends Stack {
     return sg;
   }
 
-  private createFargateSecurityGroup(): ec2.SecurityGroup {
-    const sg = new ec2.SecurityGroup(this, this.prefix + "FargateSecurityGroup", {
-      vpc: this.vpc,
+  public createFargateSecurityGroup(vpc: ec2.Vpc, albSecurityGroup: ec2.SecurityGroup): ec2.SecurityGroup {
+    const sg = new ec2.SecurityGroup(this.scope, this.prefix + "FargateSecurityGroup", {
+      vpc: vpc,
     });
     
     sg.addIngressRule(
-      this.albSecurityGroup,
+      albSecurityGroup,
       ec2.Port.allTraffic()
     );
     
     return sg;
   }
 
-  private createAlb(): elb.ApplicationLoadBalancer {
-    return new elb.ApplicationLoadBalancer(this, this.prefix + "Alb", {
-      vpc: this.vpc,
-      securityGroup: this.albSecurityGroup,
+  public createAlb(vpc: ec2.Vpc, albSecurityGroup: ec2.SecurityGroup): elb.ApplicationLoadBalancer {
+    return new elb.ApplicationLoadBalancer(this.scope, this.prefix + "Alb", {
+      vpc: vpc,
+      securityGroup: albSecurityGroup,
       internetFacing: true,
     });
   }
 
-  private createListener(alb: elb.ApplicationLoadBalancer): elb.ApplicationListener {
+  public createListener(alb: elb.ApplicationLoadBalancer): elb.ApplicationListener {
     return alb.addListener(this.prefix + "Listener", {
       protocol: elb.ApplicationProtocol.HTTP,
       port: 80,
     });
   }
 
-  private createTargetGroup(): elb.ApplicationTargetGroup {
-    return new elb.ApplicationTargetGroup(this, this.prefix + "TargetGroup", {
-      vpc: this.vpc,
+  public createTargetGroup(vpc: ec2.Vpc): elb.ApplicationTargetGroup {
+    return new elb.ApplicationTargetGroup(this.scope, this.prefix + "TargetGroup", {
+      vpc: vpc,
       port: 80,
       protocol: elb.ApplicationProtocol.HTTP,
       targetType: elb.TargetType.IP,
@@ -141,20 +107,20 @@ export class CdkEcsFirelensStack extends Stack {
     });
   }
 
-  private attachTargetGroupToListener(listener: elb.ApplicationListener): void {
+  public attachTargetGroupToListener(listener: elb.ApplicationListener, targetGroup: elb.ApplicationTargetGroup): void {
     listener.addTargetGroups(this.prefix + "AddTargetGroup", {
-      targetGroups: [this.targetGroup],
+      targetGroups: [targetGroup],
     });
   }
 
-  private createEcsCluster(): ecs.Cluster {
-    return new ecs.Cluster(this, this.prefix + "Cluster", { 
-      vpc: this.vpc 
+  public createEcsCluster(vpc: ec2.Vpc): ecs.Cluster {
+    return new ecs.Cluster(this.scope, this.prefix + "Cluster", { 
+      vpc: vpc 
     });
   }
 
-  private createTaskRole(): iam.Role {
-    const taskRole = new iam.Role(this, this.prefix + "RaskRole", {
+  public createTaskRole(): iam.Role {
+    const taskRole = new iam.Role(this.scope, this.prefix + "RaskRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
     });
 
@@ -177,22 +143,22 @@ export class CdkEcsFirelensStack extends Stack {
     return taskRole;
   }
 
-  private createTaskDefinition(taskRole: iam.Role): ecs.FargateTaskDefinition {
-    return new ecs.FargateTaskDefinition(this, this.prefix + "taskDefinition", {
+  public createTaskDefinition(taskRole: iam.Role): ecs.FargateTaskDefinition {
+    return new ecs.FargateTaskDefinition(this.scope, this.prefix + "taskDefinition", {
       cpu: 512,
       memoryLimitMiB: 1024,
       taskRole: taskRole,
     });
   }
 
-  private configureTaskDefinition(taskDefinition: ecs.FargateTaskDefinition): void {
+  public configureTaskDefinition(taskDefinition: ecs.FargateTaskDefinition, asset: assets.Asset): void {
     // Fluent Bitログルーターの設定
     taskDefinition.addFirelensLogRouter(this.prefix + "FirelensLogRouter", {
       firelensConfig: {
         type: FirelensLogRouterType.FLUENTBIT,
       },
       environment: {
-        aws_fluent_bit_init_s3_1: `arn:aws:s3:::${this.asset.s3BucketName}/${this.asset.s3ObjectKey}`,
+        aws_fluent_bit_init_s3_1: `arn:aws:s3:::${asset.s3BucketName}/${asset.s3ObjectKey}`,
       },
       image: ecs.ContainerImage.fromRegistry(
         "public.ecr.aws/aws-observability/aws-for-fluent-bit:init-latest"
@@ -217,19 +183,54 @@ export class CdkEcsFirelensStack extends Stack {
     );
   }
 
-  private createFargateService(
+  public createFargateService(
     cluster: ecs.Cluster, 
-    taskDefinition: ecs.FargateTaskDefinition
+    taskDefinition: ecs.FargateTaskDefinition,
+    fargateSecurityGroup: ec2.SecurityGroup,
+    targetGroup: elb.ApplicationTargetGroup
   ): ecs.FargateService {
-    const service = new ecs.FargateService(this, this.prefix + "FargateService", {
+    const service = new ecs.FargateService(this.scope, this.prefix + "FargateService", {
       cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1,
       assignPublicIp: true,
-      securityGroups: [this.fargateSecurityGroup],
+      securityGroups: [fargateSecurityGroup],
     });
 
-    service.attachToApplicationTargetGroup(this.targetGroup);
+    service.attachToApplicationTargetGroup(targetGroup);
     return service;
+  }
+}
+
+// メインのスタッククラス
+export class CdkEcsFirelensStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+    
+    // プレフィックスの初期化
+    const prefix = 'Cdkfargate01';
+    
+    // リソースファクトリーの初期化
+    const factory = new ResourceFactory(this, prefix);
+    
+    // リソースの作成
+    const asset = factory.createAsset();
+    const logBucket = factory.createLogBucket();
+    factory.createFirehoseDeliveryStream(logBucket);
+    
+    const vpc = factory.createVpc();
+    const albSecurityGroup = factory.createAlbSecurityGroup(vpc);
+    const fargateSecurityGroup = factory.createFargateSecurityGroup(vpc, albSecurityGroup);
+    
+    const alb = factory.createAlb(vpc, albSecurityGroup);
+    const listener = factory.createListener(alb);
+    const targetGroup = factory.createTargetGroup(vpc);
+    factory.attachTargetGroupToListener(listener, targetGroup);
+    
+    const cluster = factory.createEcsCluster(vpc);
+    const taskRole = factory.createTaskRole();
+    const taskDefinition = factory.createTaskDefinition(taskRole);
+    factory.configureTaskDefinition(taskDefinition, asset);
+    factory.createFargateService(cluster, taskDefinition, fargateSecurityGroup, targetGroup);
   }
 }
