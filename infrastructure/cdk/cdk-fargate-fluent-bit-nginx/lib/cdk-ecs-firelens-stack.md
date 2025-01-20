@@ -64,7 +64,7 @@ logBucket設定:
 ```plaintext
 DeliveryStream設定:
 - リソースID: {prefix}LogDeliveryStream
-- ストリーム名: {prefix}log-delivery-stream
+- ストリーム名: {prefix}log-delivery-stream02
 - 出力先: logBucket
 - インスタンス生成: new firehose.DeliveryStream
 - 保存形式: デフォルト設定
