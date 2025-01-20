@@ -23,7 +23,7 @@
 
 ### 1.3 Kinesis Firehose
 - リソースID: "logDeliveryStream"
-- ストリーム名: "log-delivery-stream02"
+- ストリーム名: "log-delivery-stream03"
 - 出力先: logBucket
 
 ## 2. ネットワーク構成

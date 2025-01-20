@@ -9,6 +9,7 @@ import {
   RemovalPolicy,
   Stack,
   StackProps,
+  Duration,
 } from "aws-cdk-lib";
 import { FirelensLogRouterType } from "aws-cdk-lib/aws-ecs";
 import { Effect } from "aws-cdk-lib/aws-iam";
@@ -38,7 +39,7 @@ export class CdkEcsFirelensStack extends Stack {
     });
 
     new firehose.DeliveryStream(this, "logDeliveryStream", {
-      deliveryStreamName: "log-delivery-stream02",
+      deliveryStreamName: "log-delivery-stream03",
       destinations: [new destinations.S3Bucket(this.logBucket)],
     });
 
@@ -55,10 +56,13 @@ export class CdkEcsFirelensStack extends Stack {
 
     this.fargateSecurityGroup = new ec2.SecurityGroup(this, "fargateSecurityGroup", {
       vpc: this.vpc,
+      description: "Security group for Fargate service",
     });
+    
     this.fargateSecurityGroup.addIngressRule(
       this.albSecurityGroup,
-      ec2.Port.allTraffic()
+      ec2.Port.tcp(3000),
+      'Allow inbound traffic from ALB on port 3000'
     );
 
     // ALB設定
@@ -75,11 +79,11 @@ export class CdkEcsFirelensStack extends Stack {
 
     this.targetGroup = new elb.ApplicationTargetGroup(this, "targetGroup", {
       vpc: this.vpc,
-      port: 80,
+      port: 3000,
       protocol: elb.ApplicationProtocol.HTTP,
       targetType: elb.TargetType.IP,
       healthCheck: {
-        path: "/",
+        path: "/health",
         healthyHttpCodes: "200",
       },
     });
@@ -111,6 +115,32 @@ export class CdkEcsFirelensStack extends Stack {
       })
     );
 
+    // ECRアクセス用の専用ポリシーを追加
+    this.taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ],
+        resources: ["*"],  // GetAuthorizationTokenはリソースレベルの制限をサポートしていません
+        effect: Effect.ALLOW,
+      })
+    );
+
+    this.taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ],
+        resources: [`arn:aws:ecr:ap-northeast-1:985539793438:repository/nextjs-app`],
+        effect: Effect.ALLOW,
+      })
+    );
+
     const taskDefinition = this.createTaskDefinition(asset);
     
     const fargateService = new ecs.FargateService(this, "fargateService", {
@@ -129,6 +159,12 @@ export class CdkEcsFirelensStack extends Stack {
       cpu: 512,
       memoryLimitMiB: 1024,
       taskRole: this.taskRole,
+      executionRole: new iam.Role(this, 'TaskExecutionRole', {
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
+        ]
+      })
     });
 
     taskDefinition.addFirelensLogRouter("firelensLogRouter", {
@@ -146,12 +182,28 @@ export class CdkEcsFirelensStack extends Stack {
       }),
     });
 
-    taskDefinition.defaultContainer = taskDefinition.addContainer("nginxContainer", {
-      image: ecs.ContainerImage.fromRegistry("public.ecr.aws/nginx/nginx:latest"),
+    taskDefinition.defaultContainer = taskDefinition.addContainer("nextjsContainer", {
+      image: ecs.ContainerImage.fromRegistry(
+        "985539793438.dkr.ecr.ap-northeast-1.amazonaws.com/nextjs-app"
+      ),
       logging: ecs.LogDrivers.firelens({
-        options: {},
+        options: {
+          Name: 'firehose',
+          region: 'ap-northeast-1',
+          delivery_stream: 'log-delivery-stream03'
+        }
       }),
-      portMappings: [{ containerPort: 80 }],
+      portMappings: [{ containerPort: 3000 }],
+      healthCheck: {
+        command: [
+          'CMD-SHELL',
+          'node -e "const http = require(\'http\'); const options = { hostname: \'localhost\', port: 3000, path: \'/health\', timeout: 2000 }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }); req.on(\'error\', () => process.exit(1)); req.end()"'
+        ],
+        interval: Duration.seconds(15),
+        timeout: Duration.seconds(10),
+        retries: 5,
+        startPeriod: Duration.seconds(90)
+      }
     });
 
     return taskDefinition;
