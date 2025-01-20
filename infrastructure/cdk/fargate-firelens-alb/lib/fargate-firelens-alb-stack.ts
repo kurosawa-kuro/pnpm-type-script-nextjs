@@ -17,7 +17,7 @@ import * as path from "path";
 import * as firehose from "@aws-cdk/aws-kinesisfirehose-alpha";
 import * as destinations from "@aws-cdk/aws-kinesisfirehose-destinations-alpha";
 
-export class CdkEcsFirelensStack extends Stack {
+export class FargateFirelensAlbStack extends Stack {
   private readonly vpc: ec2.Vpc;
   private readonly logBucket: s3.Bucket;
   private readonly albSecurityGroup: ec2.SecurityGroup;
@@ -40,11 +40,9 @@ export class CdkEcsFirelensStack extends Stack {
 
     new firehose.DeliveryStream(this, "logDeliveryStream", {
       deliveryStreamName: "log-delivery-stream01",
-      destinations: [
-        new destinations.S3Bucket(this.logBucket, {
-          bufferingInterval: Duration.seconds(60)
-        })
-      ],
+      destination: new destinations.S3Bucket(this.logBucket, {
+        bufferingInterval: Duration.seconds(60)
+      })
     });
 
     // ネットワークインフラ
