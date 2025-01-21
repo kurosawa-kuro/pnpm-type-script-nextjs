@@ -7,51 +7,56 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as path from 'path';
 
-// 設定オブジェクトの型定義
+// Configuration Types
 type GlueColumnConfig = {
   name: string;
   type: string;
 };
 
-type ConfigType = {
-  GLUE: {
-    Version:string;
-    DATABASE_NAME: string;
-    DATABASE_DESCRIPTION: string;
-    TABLE: {
-      NAME: string;
-      COLUMNS: GlueColumnConfig[];
-      LOCATION: string;
-    };
-  };
-  GLUE_JOB: {
+type GlueConfig = {
+  Version: string;
+  DATABASE_NAME: string;
+  DATABASE_DESCRIPTION: string;
+  TABLE: {
     NAME: string;
-    ROLE_NAME: string;
-    INPUT_PATH: string;
-    OUTPUT_PATH: string;
-    SCRIPT_LOCATION: string;
-    TIMEOUT: number;
-    WORKER_TYPE: string;
-    NUMBER_OF_WORKERS: number;
-    GLUE_VERSION: string;
-  };
-  CRAWLER: {
-    NAME: string;
-    TARGET_PATH: string;
-    SCHEDULE: string;
+    COLUMNS: GlueColumnConfig[];
+    LOCATION: string;
   };
 };
 
-const GLUE_VERSION = "02";
-const TABLE_PREFIX = `raw_api_access_logs_${GLUE_VERSION}`;
+type GlueJobConfig = {
+  NAME: string;
+  ROLE_NAME: string;
+  INPUT_PATH: string;
+  OUTPUT_PATH: string;
+  SCRIPT_LOCATION: string;
+  TIMEOUT: number;
+  WORKER_TYPE: string;
+  NUMBER_OF_WORKERS: number;
+  GLUE_VERSION: string;
+};
+
+type CrawlerConfig = {
+  NAME: string;
+  TARGET_PATH: string;
+  SCHEDULE: string;
+};
+
+type ConfigType = {
+  GLUE: GlueConfig;
+  GLUE_JOB: GlueJobConfig;
+  CRAWLER: CrawlerConfig;
+};
+
+const GLUE_VERSION = "03";
 
 const CONFIG: ConfigType = {
   GLUE: {
     Version: GLUE_VERSION,
-    DATABASE_NAME: `fargate_logs_db${GLUE_VERSION}`,
+    DATABASE_NAME: `fargate_logs_db_${GLUE_VERSION}`,
     DATABASE_DESCRIPTION: 'Database for Fargate application logs analysis',
     TABLE: {
-      NAME: TABLE_PREFIX,
+      NAME: `raw_api_access_logs_${GLUE_VERSION}`,
       COLUMNS: [
         { name: 'level', type: 'string' },
         { name: 'message', type: 'string' },
@@ -64,7 +69,7 @@ const CONFIG: ConfigType = {
     }
   },
   GLUE_JOB: {
-    NAME: 'ETL-Log-Process-Job' + GLUE_VERSION,
+    NAME: `ETL-Log-Process-Job_${GLUE_VERSION}`,
     ROLE_NAME: 'GlueETL-Log-Process-Role',
     INPUT_PATH: 's3://fargatestack-logbucketcc3b17e8-0djriusfgxia/',  // 入力パスを修正
     OUTPUT_PATH: 's3://fargatestack-logbucketcc3b17e8-0djriusfgxia/processed/',
@@ -75,39 +80,42 @@ const CONFIG: ConfigType = {
     GLUE_VERSION: '3.0'
   },
   CRAWLER: {
-    NAME: 'api-logs-crawler',
+    NAME: `api-logs-crawler_${GLUE_VERSION}`,
     TARGET_PATH: 's3://fargatestack-logbucketcc3b17e8-0djriusfgxia/processed/',  // 処理済みデータのパスに修正
     SCHEDULE: 'cron(0/30 * * * ? *)'  // 検証用に30分間隔に変更
   }
 } as const;
 
 export class AthenaStack extends cdk.Stack {
+  // Stack-level resources
   private readonly glueRole: iam.IRole;
   private readonly etlScript: s3assets.Asset;
+  private readonly glueDatabase: glue.CfnDatabase;
+  private readonly glueTable: glue.CfnTable;
+  private readonly etlJob: glue.CfnJob;
+  private readonly crawler: glue.CfnCrawler;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Glueロールの初期化
-    this.glueRole = this.initializeGlueRole();
-    this.etlScript = new s3assets.Asset(this, 'ETLScript', {
-      path: path.join(__dirname, 'process_api_logs_filter.py')
-    });
+    // Initialize core resources
+    this.glueRole = this.createGlueRole();
+    this.etlScript = this.createETLScript();
     
-    // Glueリソースの作成
-    const { glueDatabase, glueTable } = this.createGlueResources();
+    // Create Glue infrastructure
+    this.glueDatabase = this.createGlueDatabase();
+    this.glueTable = this.createGlueTable();
     
-    // ETLジョブの作成
-    const etlJob = this.createETLJob();
+    // Create ETL components
+    this.etlJob = this.createETLJob();
+    this.crawler = this.createCrawler();
     
-    // Crawlerの作成
-    const crawler = this.createCrawler();
-    
-    // 出力の設定
-    this.setupOutputs(etlJob, crawler);
+    // Setup outputs
+    this.defineStackOutputs();
   }
 
-  private initializeGlueRole(): iam.IRole {
+  // Role Management
+  private createGlueRole(): iam.IRole {
     return iam.Role.fromRoleName(
       this,
       'ImportedGlueRole',
@@ -115,18 +123,27 @@ export class AthenaStack extends cdk.Stack {
     );
   }
 
-  private createGlueResources() {
-    // Glueデータベースの作成
-    const glueDatabase = new glue.CfnDatabase(this, 'GlueDB', {
+  // ETL Script Management
+  private createETLScript(): s3assets.Asset {
+    return new s3assets.Asset(this, 'ETLScript', {
+      path: path.join(__dirname, 'process_api_logs_filter.py')
+    });
+  }
+
+  // Database Management
+  private createGlueDatabase(): glue.CfnDatabase {
+    return new glue.CfnDatabase(this, 'GlueDB', {
       catalogId: this.account,
       databaseInput: {
         name: CONFIG.GLUE.DATABASE_NAME,
         description: CONFIG.GLUE.DATABASE_DESCRIPTION,
       },
     });
+  }
 
-    // Glueテーブルの作成
-    const glueTable = new glue.CfnTable(this, 'GlueTbl', {
+  // Table Management
+  private createGlueTable(): glue.CfnTable {
+    const table = new glue.CfnTable(this, 'GlueTbl', {
       catalogId: this.account,
       databaseName: CONFIG.GLUE.DATABASE_NAME,
       tableInput: {
@@ -153,10 +170,11 @@ export class AthenaStack extends cdk.Stack {
       }
     });
 
-    glueTable.addDependency(glueDatabase);
-    return { glueDatabase, glueTable };
+    table.addDependency(this.glueDatabase);
+    return table;
   }
 
+  // ETL Job Management
   private createETLJob(): glue.CfnJob {
     return new glue.CfnJob(this, 'LogProcessJob', {
       name: CONFIG.GLUE_JOB.NAME,
@@ -176,6 +194,7 @@ export class AthenaStack extends cdk.Stack {
     });
   }
 
+  // Crawler Management
   private createCrawler(): glue.CfnCrawler {
     return new glue.CfnCrawler(this, 'LogCrawler', {
       name: CONFIG.CRAWLER.NAME,
@@ -186,7 +205,7 @@ export class AthenaStack extends cdk.Stack {
           path: CONFIG.CRAWLER.TARGET_PATH
         }]
       },
-      tablePrefix: TABLE_PREFIX,
+      tablePrefix: `raw_api_access_logs_${GLUE_VERSION}`,
       schemaChangePolicy: {
         updateBehavior: 'UPDATE_IN_DATABASE',
         deleteBehavior: 'LOG'
@@ -197,19 +216,20 @@ export class AthenaStack extends cdk.Stack {
     });
   }
 
-  private setupOutputs(etlJob: glue.CfnJob, crawler: glue.CfnCrawler): void {
+  // Output Management
+  private defineStackOutputs(): void {
     new cdk.CfnOutput(this, 'ScriptLocation', {
       value: this.etlScript.s3ObjectUrl,
       description: 'ETLスクリプトの場所 - 手動でロールに権限を追加してください'
     });
 
     new cdk.CfnOutput(this, 'GlueJobArn', {
-      value: etlJob.ref,
+      value: this.etlJob.ref,
       description: 'The ARN of the Glue ETL Job'
     });
 
     new cdk.CfnOutput(this, 'CrawlerName', {
-      value: crawler.ref,
+      value: this.crawler.ref,
       description: 'The name of the Glue Crawler'
     });
   }
