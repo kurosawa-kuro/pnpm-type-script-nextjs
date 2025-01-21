@@ -26,6 +26,8 @@ aws logs tail /ecs/nextjs-app-02 --log-stream-name "ecs/nextjs-app/[TASK-ID]" --
 
 
 # 1. 現状のスタック情報確認
+cdk bootstrap --force aws://985539793438/ap-northeast-1
+
 cdk deploy --require-approval never
 
 cdk diff && cdk destroy --force && cdk deploy --require-approval never

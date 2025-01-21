@@ -41,7 +41,7 @@ class ResourceFactory {
 
   public createFirehoseDeliveryStream(logBucket: s3.Bucket): void {
     new firehose.DeliveryStream(this.scope, this.prefix + "LogDeliveryStream", {
-      deliveryStreamName: this.prefix + "log-delivery-stream01",
+      deliveryStreamName: this.prefix + "log-delivery-stream02",
       destinations: [new destinations.S3Bucket(logBucket)],
     });
   }

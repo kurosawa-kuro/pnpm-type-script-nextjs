@@ -25,7 +25,7 @@ const CONFIG = {
     IMAGE: "public.ecr.aws/aws-observability/aws-for-fluent-bit:init-latest"
   },
   FIREHOSE: {
-    DELIVERY_STREAM_NAME: "log-delivery-stream01"
+    DELIVERY_STREAM_NAME: "log-delivery-stream02"
   },
   ECR: {
     ACCOUNT_ID: "985539793438",
@@ -101,7 +101,7 @@ export class FargateStack extends Stack {
     new CfnOutput(this, 'ApplicationLoadBalancerDns', {
       value: `http://${alb.loadBalancerDnsName}/`,
       description: 'Application Load Balancer URL',
-      exportName: 'LoadBalancerUrl',
+      exportName: 'LoadBalancerUrl02',
     });
 
     const listener = alb.addListener("listener", {

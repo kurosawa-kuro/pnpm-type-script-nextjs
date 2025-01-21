@@ -39,7 +39,7 @@ export class CdkEcsFirelensStack extends Stack {
     });
 
     new firehose.DeliveryStream(this, "logDeliveryStream", {
-      deliveryStreamName: "log-delivery-stream01",
+      deliveryStreamName: "log-delivery-stream02",
       destinations: [
         new destinations.S3Bucket(this.logBucket, {
           bufferingInterval: Duration.seconds(60)
@@ -194,7 +194,7 @@ export class CdkEcsFirelensStack extends Stack {
         options: {
           Name: 'firehose',
           region: 'ap-northeast-1',
-          delivery_stream: 'log-delivery-stream01'
+          delivery_stream: 'log-delivery-stream02'
         }
       }),
       portMappings: [{ containerPort: 3000 }],
