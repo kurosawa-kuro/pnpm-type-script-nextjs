@@ -60,9 +60,4 @@ glueContext.write_dynamic_frame.from_options(
     format="json"
 )
 
-# ここからGlue DB
-# Glue DB 作成
-
-# Glue Table 作成
-
 job.commit()
