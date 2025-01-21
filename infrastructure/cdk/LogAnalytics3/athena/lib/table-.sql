@@ -1,4 +1,4 @@
-CREATE EXTERNAL TABLE fargate_logs_db.api_logs (
+CREATE EXTERNAL TABLE fargate_logs_db02.api_logs (
     level STRING,
     message STRING,
     method STRING,
